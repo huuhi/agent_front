@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+import NexusAgent from './NexusAgent.vue'
 </script>
 
 <template>
-  <HelloWorld />
+  <NexusAgent />
 </template>
