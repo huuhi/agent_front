@@ -4,6 +4,7 @@ import type {
   MessageVO,
   KnowledgeVO,
   MCPServerVO,
+  AttachedFileVO,
 } from './types'
 
 const BASE_URL = 'http://localhost:8080'
@@ -78,11 +79,59 @@ export async function fetchModelList(baseUrl: string, token: string): Promise<st
   )
 }
 
-// ========== Chat (not used yet — SSE streaming placeholder) ==========
-export function sendChatStream(): EventSource {
+// ========== File Upload ==========
+export async function uploadFile(file: File): Promise<AttachedFileVO[]> {
   const token = getToken()
-  const url = `${BASE_URL}/chat/stream`
-  // SSE via EventSource is read-only; for POST-based SSE we'll need
-  // fetch + ReadableStream when implementing. For now, stub.
-  throw new Error('Stream chat not yet implemented')
+  const formData = new FormData()
+  formData.append('files', file)
+
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${BASE_URL}/file?bizType=CHAT`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  }
+
+  const text = await res.text()
+  const json: ApiResult<AttachedFileVO[]> = JSON.parse(text)
+  if (json.code !== 0) {
+    throw new Error(json.msg || '文件上传失败')
+  }
+  return json.data ?? []
+}
+
+export async function uploadImage(file: File): Promise<string> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${BASE_URL}/file/image`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  }
+
+  const text = await res.text()
+  const json: ApiResult<{ url: string }> = JSON.parse(text)
+  if (json.code !== 0) {
+    throw new Error(json.msg || '图片上传失败')
+  }
+  return json.data!.url
 }

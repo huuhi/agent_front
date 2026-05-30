@@ -76,6 +76,11 @@ export interface ModelDTO {
   isThinking: boolean
 }
 
+// ========== File Upload ==========
+export interface FileUploadResponse {
+  url: string
+}
+
 // ========== Chat ==========
 export interface ChatUserMessageDTO {
   type: 'TEXT' | 'FILE' | 'IMAGE'
