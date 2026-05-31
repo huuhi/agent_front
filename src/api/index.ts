@@ -7,7 +7,7 @@ import type {
   AttachedFileVO,
 } from './types'
 
-const BASE_URL = 'http://localhost:8080'
+const BASE_URL = 'http://100.106.145.17:8080'
 
 function getToken(): string | null {
   return localStorage.getItem('token')

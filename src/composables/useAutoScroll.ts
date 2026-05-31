@@ -27,7 +27,7 @@ export function useAutoScroll() {
     const el = messageContainerRef.value
     if (!el) return
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    showScrollButton.value = distFromBottom > 160
+    showScrollButton.value = distFromBottom > 200
   }
 
   /**
@@ -43,7 +43,7 @@ export function useAutoScroll() {
     const wasNearBottom = distFromBottom < 40
 
     // Sync button visibility on every content flush (backup for scroll event)
-    showScrollButton.value = distFromBottom > 160
+    showScrollButton.value = distFromBottom > 200
 
     nextTick(() => {
       if (wasNearBottom) {

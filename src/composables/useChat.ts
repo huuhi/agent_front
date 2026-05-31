@@ -219,46 +219,76 @@ export function useChat(
 
     scrollToBottom()
 
-    // --- Smooth text flusher (buffer SSE chunks, flush at ~30fps) ---
-    const FLUSH_MS = 33
-    let pendingBuffer = ''
-    let flushTimer: ReturnType<typeof setInterval> | null = null
-    let streamFinished = false
+    // --- Typewriter (plain text during animation, markdown after finalize) ---
+    let typewriterPos = 0
+    let typewriterRaf: number | null = null
+    let typewriterDone = false
+    let fullContent = ''
 
-    function flushNow() {
-      if (!pendingBuffer) return
-      streamingContent.value += pendingBuffer
-      pendingBuffer = ''
-      updatePlaceholder((msg) => {
-        const textFrag = findLastTextFragment(msg)
-        if (textFrag) textFrag.content = streamingContent.value
-        msg.content = streamingContent.value
-      })
-      autoScrollIfNeeded()
-    }
+    let twFrame = 0
 
-    function stopFlusher() {
-      if (flushTimer) {
-        clearInterval(flushTimer)
-        flushTimer = null
-      }
-      streamFinished = false
-    }
-
-    function startFlusher() {
-      if (flushTimer) return
-      flushTimer = setInterval(() => {
-        try {
-          flushNow()
-          if (streamFinished && !pendingBuffer) {
-            stopFlusher()
-            if (activePlaceholderId.value) {
-              finalizeMessage()
-            }
-            refreshSessionList()
+    function typewriterTick() {
+      try {
+        if (typewriterPos < fullContent.length) {
+          twFrame++
+          const remaining = fullContent.length - typewriterPos
+          const step = Math.max(2, Math.ceil(remaining / 80))
+          typewriterPos = Math.min(typewriterPos + step, fullContent.length)
+          const shown = fullContent.slice(0, typewriterPos)
+          streamingContent.value = shown
+          autoScrollIfNeeded()
+          // Only update placeholder every 4th frame — smooth text with 75% fewer re-renders
+          if (twFrame % 4 === 0) {
+            updatePlaceholder((msg) => {
+              const textFrag = findLastTextFragment(msg)
+              if (textFrag) textFrag.content = shown
+              msg.content = shown
+            })
           }
-        } catch (e) { console.error('[Flusher]', e) }
-      }, FLUSH_MS)
+          typewriterRaf = requestAnimationFrame(typewriterTick)
+        } else if (typewriterDone) {
+          typewriterRaf = null
+          if (activePlaceholderId.value) {
+            finalizeMessage()
+          }
+          refreshSessionList()
+        } else {
+          typewriterRaf = null
+        }
+      } catch (e) {
+        console.error('[Typewriter]', e)
+        typewriterPos = fullContent.length
+        streamingContent.value = fullContent
+        updatePlaceholder((msg) => {
+          const textFrag = findLastTextFragment(msg)
+          if (textFrag) textFrag.content = fullContent
+          msg.content = fullContent
+        })
+        if (typewriterDone && activePlaceholderId.value) {
+          finalizeMessage()
+          refreshSessionList()
+        }
+        typewriterRaf = null
+      }
+    }
+
+    function kickTypewriter() {
+      if (!typewriterRaf) {
+        typewriterRaf = requestAnimationFrame(typewriterTick)
+      }
+    }
+
+    function finishTypewriter() {
+      if (typewriterRaf) { cancelAnimationFrame(typewriterRaf); typewriterRaf = null }
+      if (typewriterPos < fullContent.length) {
+        typewriterPos = fullContent.length
+        streamingContent.value = fullContent
+        updatePlaceholder((msg) => {
+          const textFrag = findLastTextFragment(msg)
+          if (textFrag) textFrag.content = fullContent
+          msg.content = fullContent
+        })
+      }
     }
 
     // --- Call streamChat ---
@@ -272,8 +302,8 @@ export function useChat(
               })
             }
             ensureTextFragmentLast()
-            pendingBuffer += content
-            startFlusher()
+            fullContent += content
+            kickTypewriter()
           } catch (e) { console.error('[onTextDelta]', e) }
         },
         onThinking(content: string) {
@@ -293,10 +323,8 @@ export function useChat(
           try {
             const accumulatedThinking = streamingThinking.value
 
-            // Flush any pending text before showing the tool fragment
-            flushNow()
-            stopFlusher()
-
+            // Flush any buffered text before showing the tool fragment
+            finishTypewriter()
             const toolCall: ComponentToolCall = {
               id: tc.id,
               name: tc.name,
@@ -367,27 +395,20 @@ export function useChat(
         },
         onDone(metadata) {
           try {
-            streamFinished = true
-            // Flush any remaining buffer immediately
-            flushNow()
-            // If the flusher is running, it will auto-finalize next tick
-            // If not (no text was ever streamed), finalize now
-            if (!flushTimer) {
-              if (activePlaceholderId.value) {
-                finalizeMessage()
-              }
-              refreshSessionList()
-            }
             if (metadata?.sessionId && currentSessionId.value.startsWith('local-')) {
               currentSessionId.value = String(metadata.sessionId)
               localStorage.setItem('currentSessionId', String(metadata.sessionId))
             }
+            finishTypewriter()
+            if (activePlaceholderId.value) {
+              finalizeMessage()
+            }
+            refreshSessionList()
           } catch (e) { console.error('[onDone]', e) }
         },
         onError(errMsg) {
           try {
-            flushNow()
-            stopFlusher()
+            finishTypewriter()
             updatePlaceholder((msg) => {
               msg.content = streamingContent.value || ''
               if (streamingThinking.value) {
@@ -415,7 +436,6 @@ export function useChat(
         },
       }, abortController.value.signal)
     } catch (err: unknown) {
-      stopFlusher()
       if (err instanceof Error && err.name === 'AbortError') {
         updatePlaceholder((msg) => {
           msg.content = streamingContent.value + '\n\n> ⚠️ 响应已中断'
@@ -444,7 +464,6 @@ export function useChat(
         activePlaceholderId.value = null
       }
     } finally {
-      stopFlusher()
       isAiResponding.value = false
       abortController.value = null
     }

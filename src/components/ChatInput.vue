@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { formatFileSize, isImageFile } from '../utils/helpers'
 import type { ModelOption } from '../types/chat'
 import type { KnowledgeVO } from '../api/types'
@@ -35,6 +35,23 @@ const fileInput = ref<HTMLInputElement | null>(null)
 function handleAttachClick() {
   fileInput.value?.click()
 }
+
+function onTextareaInput(e: Event) {
+  const el = e.target as HTMLTextAreaElement
+  emit('update:inputText', el.value)
+  // Auto-resize up to 35vh
+  el.style.height = 'auto'
+  const maxH = window.innerHeight * 0.35
+  el.style.height = Math.min(el.scrollHeight, maxH) + 'px'
+}
+
+// Reset textarea height when input is cleared programmatically (after send)
+watch(() => props.inputText, (val) => {
+  if (!val) {
+    const el = document.querySelector<HTMLTextAreaElement>('.chat-textarea')
+    el?.style && (el.style.height = 'auto')
+  }
+})
 </script>
 
 <template>
@@ -81,10 +98,10 @@ function handleAttachClick() {
       </div>
     </div>
     <div class="bg-white border border-slate-100 rounded-2xl shadow-md transition-shadow duration-200 focus-within:shadow-lg">
-      <textarea :value="inputText" @input="emit('update:inputText', ($event.target as HTMLTextAreaElement).value); ($event.target as HTMLTextAreaElement).style.height = 'auto'; ($event.target as HTMLTextAreaElement).style.height = Math.min(($event.target as HTMLTextAreaElement).scrollHeight, 80) + 'px'"
+      <textarea :value="inputText" @input="onTextareaInput"
         @keydown="emit('handleKeydown', $event)"
         placeholder="给 NexusAgent 发送消息，或者询问知识库..." rows="1"
-        class="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none leading-relaxed"
+        class="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none leading-relaxed chat-textarea"
       ></textarea>
       <!-- Pending files -->
       <div v-if="pendingFiles.length > 0" class="flex flex-wrap gap-1.5 px-4 pb-2">
@@ -112,17 +129,29 @@ function handleAttachClick() {
         </button>
         <div class="flex items-center gap-2">
           <span v-if="isAiResponding" class="text-xs text-gray-400 animate-pulse">AI 响应中...</span>
-          <button v-if="isAiResponding" @click="emit('cancelStreaming')"
-            class="flex items-center justify-center w-9 h-9 rounded-xl bg-red-100 text-red-500 hover:bg-red-200 transition-all duration-150 shadow-sm"
-            title="停止生成"
-          ><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
-          <button v-else @click="emit('sendMessage')"
-            class="flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-150"
-            :class="(inputText.trim() || pendingFiles.length > 0) ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm' : 'bg-slate-100 text-gray-300 cursor-not-allowed'"
-            :disabled="!inputText.trim() && pendingFiles.length === 0"
-          ><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+          <div class="relative w-9 h-9">
+            <button v-if="isAiResponding" @click="emit('cancelStreaming')"
+              class="absolute inset-0 flex items-center justify-center rounded-xl bg-red-100 text-red-500 hover:bg-red-200 transition-all duration-150 shadow-sm"
+              title="停止生成"
+            ><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+            <button v-else @click="emit('sendMessage')"
+              class="absolute inset-0 flex items-center justify-center rounded-xl transition-all duration-150"
+              :class="(inputText.trim() || pendingFiles.length > 0) ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'"
+              :disabled="!inputText.trim() && pendingFiles.length === 0"
+            ><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style>
+.chat-textarea {
+  max-height: 35vh;
+}
+.chat-textarea::-webkit-scrollbar { width: 4px; }
+.chat-textarea::-webkit-scrollbar-track { background: transparent; }
+.chat-textarea::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 999px; }
+.chat-textarea::-webkit-resizer { display: none; }
+</style>

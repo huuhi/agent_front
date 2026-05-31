@@ -232,42 +232,45 @@ onMounted(async () => {
         </button>
       </header>
 
-      <!-- Message Area -->
-      <div ref="messageContainerRef" @scroll="handleScroll" class="flex-1 overflow-y-auto px-6 py-6 relative">
-        <div class="max-w-3xl mx-auto space-y-6">
-          <MessageBubble
-            v-for="msg in messageList"
-            :key="msg.id"
-            :msg="msg"
-            :selectedModelName="selectedModel.name"
-            :isAiResponding="isAiResponding"
-            :isLastMessage="msg === messageList[messageList.length - 1]"
-            :expandedThinking="expandedThinking"
-            :showAllAttachments="showAllAttachments"
-            :toolChainState="toolChainState"
-            :expandedSteps="expandedSteps"
-            @toggleThinking="toggleThinking"
-            @toggleAttachments="toggleAttachments"
-            @toggleToolStep="toggleToolStep"
-          />
+      <!-- Message Area (scrollable) -->
+      <div class="flex-1 relative flex flex-col min-h-0">
+        <div ref="messageContainerRef" @scroll="handleScroll" class="flex-1 overflow-y-auto px-6 py-6">
+          <div class="max-w-3xl mx-auto space-y-6">
+            <MessageBubble
+              v-for="msg in messageList"
+              :key="msg.id"
+              :msg="msg"
+              :selectedModelName="selectedModel.name"
+              :isAiResponding="isAiResponding"
+              :isLastMessage="msg === messageList[messageList.length - 1]"
+              :expandedThinking="expandedThinking"
+              :showAllAttachments="showAllAttachments"
+              :toolChainState="toolChainState"
+              :expandedSteps="expandedSteps"
+              @toggleThinking="toggleThinking"
+              @toggleAttachments="toggleAttachments"
+              @toggleToolStep="toggleToolStep"
+            />
 
-          <!-- Empty State -->
-          <div v-if="messageList.length === 0 && !loading" class="flex flex-col items-center justify-center py-20 text-center">
-            <div class="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center mb-6">
-              <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+            <!-- Empty State -->
+            <div v-if="messageList.length === 0 && !loading" class="flex flex-col items-center justify-center py-20 text-center">
+              <div class="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center mb-6">
+                <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+              </div>
+              <h3 class="text-lg font-semibold text-gray-700 mb-2">开始新的对话</h3>
+              <p class="text-sm text-gray-400 max-w-sm">向 NexusAgent 发送消息，或选择左侧的历史对话继续交流</p>
             </div>
-            <h3 class="text-lg font-semibold text-gray-700 mb-2">开始新的对话</h3>
-            <p class="text-sm text-gray-400 max-w-sm">向 NexusAgent 发送消息，或选择左侧的历史对话继续交流</p>
+
+
+            <!-- Scroll to bottom button (absolute positioned, no layout footprint) -->
+            <button id="down-button" v-if="showScrollButton" @click="scrollToBottom"
+              class="absolute bottom-1 right-6 w-8 h-8 rounded-full flex items-center justify-center bg-white border border-slate-200 shadow-sm text-slate-400 hover:text-slate-600 transition-all duration-200 z-10"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
           </div>
         </div>
 
-        <!-- Scroll to bottom button (bottom-right, appears when user scrolls up) -->
-        <button v-if="showScrollButton" @click="scrollToBottom"
-          class="absolute bottom-4 right-6 flex items-center gap-1.5 px-3 py-2 rounded-full bg-white border border-slate-200 shadow-md text-xs text-slate-500 hover:text-slate-700 hover:shadow-lg transition-all duration-200 z-10"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
-          回到最新
-        </button>
       </div>
 
       <!-- Input Zone -->
@@ -317,7 +320,7 @@ h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd { margin: 0; }
 ul, ol { margin: 0; padding: 0; }
 a { color: inherit; text-decoration: none; }
 img { display: block; max-width: 100%; }
-button { font: inherit; cursor: pointer; border: none; background: none; padding: 0; }
+#down-button { font: inherit; cursor: pointer; border: none; background: none; padding: 0;margin-right: 120px; }
 input, textarea, select { font: inherit; color: inherit; }
 
 .markdown-body { color: #334155; line-height: 1.75; word-break: break-word; }
@@ -350,6 +353,7 @@ input, textarea, select { font: inherit; color: inherit; }
 .code-copy-btn.copied { opacity: 1; color: #10b981; }
 .hljs { background: transparent !important; color: #334155 !important; }
 
+
 .drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }
 .drawer-enter-active > div:last-child, .drawer-leave-active > div:last-child { transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; }
@@ -359,9 +363,8 @@ input, textarea, select { font: inherit; color: inherit; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-from > div:last-child, .modal-leave-to > div:last-child { transform: scale(0.95); opacity: 0; }
 
-.overflow-y-auto::-webkit-scrollbar { width: 4px; }
+.overflow-y-auto::-webkit-scrollbar { width: 6px; }
 .overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
 .overflow-y-auto::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 999px; }
 .overflow-y-auto::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
-textarea { field-sizing: content; }
 </style>

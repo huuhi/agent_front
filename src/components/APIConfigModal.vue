@@ -28,7 +28,7 @@ const emit = defineEmits<{
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1.5">API 端点</label>
-            <input type="text" value="http://localhost:8080" readonly class="w-full px-3 py-2.5 rounded-xl border border-slate-100 bg-slate-50 text-sm text-gray-600 focus:outline-none" />
+            <input type="text" value="http://100.106.145.17:8080" readonly class="w-full px-3 py-2.5 rounded-xl border border-slate-100 bg-slate-50 text-sm text-gray-600 focus:outline-none" />
           </div>
           <div class="flex items-center justify-between pt-2 border-t border-slate-100">
             <span class="text-xs text-gray-400">在 console 执行 __setToken('jwt') 设置令牌</span>

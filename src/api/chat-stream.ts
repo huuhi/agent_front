@@ -1,6 +1,6 @@
 import type { ChatDTO, ChatUserMessageDTO } from './types'
 
-const BASE_URL = 'http://localhost:8080'
+const BASE_URL = 'http://100.106.145.17:8080'
 
 // ========== Types ==========
 

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev       # Start Vite dev server (localhost:5173)
+npm run dev       # Start Vite dev server (100.106.145.17:5173)
 npm run build     # vue-tsc type-check + Vite production build
 npm run preview   # Preview production build
 ```
@@ -14,7 +14,7 @@ Dependencies are managed via `npm install`. No test framework is currently confi
 
 ## Architecture Overview
 
-**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://localhost:8080`).
+**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://100.106.145.17:8080`).
 
 ### Entry Flow
 
@@ -72,10 +72,10 @@ Component-level types distinct from API types: `ComponentMessage` (with `role`, 
 
 ### Backend API Notes
 
-- Base URL: `http://localhost:8080`
+- Base URL: `http://100.106.145.17:8080`
 - Auth: Bearer token stored in `localStorage.getItem('token')`, settable via `window.__setToken('jwt')` in dev console.
 - Chat endpoint: `POST /chat/stream` returns SSE events with `type` discriminator in `data.type` (THINK, CONTENT, TOOL_EXECUTION, TOOL_EXECUTION_RESULT).
-- WebSocket: `ws://localhost:8080/ws/1` pushes `{ type: "title", data: "..." }` events.
+- WebSocket: `ws://100.106.145.17:8080/ws/1` pushes `{ type: "title", data: "..." }` events.
 
 ### Configuration
 

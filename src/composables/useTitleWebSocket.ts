@@ -2,7 +2,7 @@ import { ref, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 import type { ComponentSession } from '../types/chat'
 
-const WS_URL = 'ws://localhost:8080/ws/1'
+const WS_URL = 'ws://100.106.145.17:8080/ws/1'
 const RECONNECT_DELAY = 3000
 
 export function useTitleWebSocket(sessionList: Ref<ComponentSession[]>) {
