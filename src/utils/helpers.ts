@@ -1,5 +1,5 @@
 import hljs from 'highlight.js'
-import type { ComponentAttachment, ComponentToolCall } from '../types/chat'
+import type { ComponentAttachment } from '../types/chat'
 import type { AttachedFileVO } from '../api/types'
 
 // ========== File type detection ==========

@@ -29,24 +29,7 @@ const emit = defineEmits<{
   toggleToolStep: [id: string]
 }>()
 
-function toolGroupStatusIcon(calls: { status: string }[]): string {
-  if (calls.some(c => c.status === 'running')) return '⟳'
-  if (calls.some(c => c.status === 'error')) return '✗'
-  return '✓'
-}
 
-function toolGroupStatusClass(calls: { status: string }[]): string {
-  if (calls.some(c => c.status === 'running')) return 'bg-amber-100 text-amber-600'
-  if (calls.some(c => c.status === 'error')) return 'bg-red-100 text-red-600'
-  return 'bg-emerald-100 text-emerald-600'
-}
-
-function toolGroupLabel(calls: { name: string; status: string }[]): string {
-  if (calls.length === 1) return calls[0].name
-  const running = calls.filter(c => c.status === 'running').length
-  if (running > 0) return `${calls.length} 个工具调用 (${running} 执行中)`
-  return `${calls.length} 个工具调用`
-}
 </script>
 
 <template>

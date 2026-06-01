@@ -76,6 +76,17 @@ export interface ModelDTO {
   isThinking: boolean
 }
 
+// ========== User API Config ==========
+export interface UserApiConfigVO {
+  id?: string
+  name: string | null
+  baseUrl: string
+  model: string[]
+  isDefault: boolean
+  /** GET 响应是 apikey (小写)，POST 请求要用 APIKey (大写 AK) */
+  apikey: string
+}
+
 // ========== File Upload ==========
 export interface FileUploadResponse {
   url: string
@@ -92,7 +103,7 @@ export interface ChatDTO {
   messages: ChatUserMessageDTO[]
   sessionId?: string
   skills?: string[]
-  MCPs?: number[]
+  MCPs?: string[]
   model?: ModelDTO
   enableRag?: boolean
 }

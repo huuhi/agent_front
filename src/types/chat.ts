@@ -60,4 +60,6 @@ export interface ModelOption {
   name: string
   supportsThinking: boolean
   provider: string
+  /** API config ID (if user selected a saved config, else empty = system default) */
+  configId?: string
 }

@@ -181,7 +181,7 @@ export async function streamChat(
     return
   }
 
-  const decoder = new TextDecoder('utf-8', { stream: true })
+  const decoder = new TextDecoder('utf-8', { stream: true } as TextDecoderOptions)
   const parser = createSSEParser()
 
   try {
@@ -256,12 +256,18 @@ function dispatchEvent(msg: SSEMessage, callbacks: StreamCallbacks) {
       case 'TOOL_EXECUTION_RESULT': {
         const tr = parsed.toolResultVO
         if (tr && typeof tr === 'object') {
+          const r = tr as Record<string, unknown>
           callbacks.onToolResult?.({
-            id: String(tr.id ?? ''),
-            result: String(tr.result ?? ''),
-            isError: Boolean(tr.isError ?? false),
+            id: String(r.id ?? ''),
+            result: String(r.result ?? ''),
+            isError: Boolean(r.isError ?? false),
           })
         }
+        return
+      }
+      case 'session_id': {
+        const sid = String(parsed.sessionId ?? '')
+        if (sid) callbacks.onSessionId?.(sid)
         return
       }
     }
@@ -315,7 +321,7 @@ function dispatchEvent(msg: SSEMessage, callbacks: StreamCallbacks) {
       break
     }
     case 'finish': {
-      // Stream complete — ignore, stream ending naturally handles this
+      callbacks.onDone?.()
       break
     }
     default: {
@@ -338,7 +344,9 @@ export function buildChatDTO(
   sessionId: string | undefined,
   model: { id: string; name: string; supportsThinking: boolean; provider: string },
   enableRag: boolean,
-  existingMessages?: { role: string; content: string; attachments?: { url: string; name: string; size: number; ext: string }[] }[]
+  isThinking: boolean,
+  existingMessages?: { role: string; content: string; attachments?: { url: string; name: string; size: number; ext: string }[] }[],
+  selectedMCPIds?: string[]
 ): ChatDTO {
   const messages: ChatUserMessageDTO[] = []
 
@@ -377,11 +385,12 @@ export function buildChatDTO(
   return {
     messages,
     sessionId,
-    model: {
-      id: '',
-      modelName: model.name,
-      isThinking: model.supportsThinking,
-    },
     enableRag,
+    model: {
+      id: model.id,
+      modelName: model.name,
+      isThinking,
+    },
+    MCPs: selectedMCPIds && selectedMCPIds.length > 0 ? selectedMCPIds : undefined,
   }
 }

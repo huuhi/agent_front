@@ -7,13 +7,11 @@ import {
   fetchSessionList,
   fetchKnowledgeList,
   fetchMCPServerList,
+  fetchUserApiConfigs,
 } from './api'
 import {
-  renderMarkdown,
   setupCodeCopy,
-  groupMessages,
 } from './utils/markdown'
-import { mapFileType } from './utils/helpers'
 import { useAutoScroll } from './composables/useAutoScroll'
 import { useSessions } from './composables/useSessions'
 import { useChat } from './composables/useChat'
@@ -53,6 +51,7 @@ const {
   handleScroll,
 } = useAutoScroll()
 
+
 const {
   sessionList,
   currentSessionId,
@@ -74,25 +73,26 @@ const {
 
 // State that useChat needs access to (to handle session updates)
 import { ref, nextTick } from 'vue'
+import type { UserApiConfigVO } from './api/types'
+
+const userApiConfigs = ref<UserApiConfigVO[]>([])
+const selectedApiConfig = ref<UserApiConfigVO | null>(null)
 const selectedModel = ref<ModelOption>({ id: '', name: 'DeepSeek V4 Flash', supportsThinking: true, provider: 'DeepSeek' })
 const selectedKnowledgeBase = ref<{ id: number | string; name: string; documentCount: number } | null>(null)
 const enableRag = ref(true)
-const showModelSelector = ref(false)
-const showKnowledgeBaseSelector = ref(false)
-const showMCPDrawer = ref(false)
-const showAPIConfigModal = ref(false)
+const enableThinking = ref(true)
 const expandedThinking = ref<Set<string>>(new Set())
 const showAllAttachments = ref<Set<string>>(new Set())
 const expandedSteps = ref<Set<string>>(new Set())
 const toolChainState = ref<0 | 1 | 2>(Number(localStorage.getItem('toolChainState') || '0') as 0 | 1 | 2)
+const showMCPDrawer = ref(false)
+const showAPIConfigModal = ref(false)
+const selectedMCPIds = ref<string[]>([])
 
 const {
   inputText,
   isAiResponding,
   pendingFiles,
-  streamingContent,
-  streamingThinking,
-  activePlaceholderId,
   onFileSelected,
   removePendingFile,
   handleKeydown,
@@ -103,22 +103,56 @@ const {
   currentSessionId,
   selectedModel,
   enableRag,
+  enableThinking,
   refreshSessionList,
   scrollToBottom,
   autoScrollIfNeeded,
+  selectedMCPIds,
 )
 
-const { wsConnected, connect: connectTitleWs } = useTitleWebSocket(sessionList)
+const { connect: connectTitleWs } = useTitleWebSocket(sessionList)
 
 // ========== Actions ==========
 function selectModel(model: ModelOption) {
   selectedModel.value = model
-  showModelSelector.value = false
+}
+
+async function refreshUserApiConfigs() {
+  try {
+    userApiConfigs.value = await fetchUserApiConfigs()
+  } catch { /* ignore */ }
+}
+
+function selectApiConfig(config: UserApiConfigVO | null) {
+  selectedApiConfig.value = config
+  if (config) {
+    const modelName = config.model[0] || config.name || '未命名模型'
+    selectModel({
+      id: config.id || '',
+      name: modelName,
+      supportsThinking: false,
+      provider: config.name || '自定义',
+      configId: config.id,
+    })
+    localStorage.setItem('selectedConfigId', config.id || '')
+  } else {
+    selectModel({ id: '', name: 'DeepSeek V4 Flash', supportsThinking: true, provider: 'DeepSeek' })
+    localStorage.removeItem('selectedConfigId')
+    localStorage.removeItem('selectedModelName')
+  }
+}
+
+function selectModelLocal(model: ModelOption) {
+  selectModel(model)
+  if (model.configId) {
+    localStorage.setItem('selectedModelName', model.name)
+  } else {
+    localStorage.removeItem('selectedModelName')
+  }
 }
 
 function selectKnowledgeBase(kb: typeof knowledgeBases.value[0] | null) {
   selectedKnowledgeBase.value = kb ? { id: kb.id, name: kb.name, documentCount: 0 } : null
-  showKnowledgeBaseSelector.value = false
 }
 
 function toggleRag() { enableRag.value = !enableRag.value }
@@ -158,6 +192,21 @@ function toggleToolChain() {
   localStorage.setItem('toolChainState', String(toolChainState.value))
 }
 
+function toggleMCPSelection(id: string) {
+  const idx = selectedMCPIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedMCPIds.value = selectedMCPIds.value.filter(x => x !== id)
+  } else {
+    selectedMCPIds.value = [...selectedMCPIds.value, id]
+  }
+}
+
+async function refreshMCPList() {
+  try {
+    mockMCPList.value = await fetchMCPServerList()
+  } catch { /* ignore */ }
+}
+
 function setToken(token: string) {
   localStorage.setItem('token', token)
 }
@@ -171,11 +220,30 @@ onMounted(async () => {
   connectTitleWs()
 
   try {
-    const [sessions, knowledgeList, mcpList] = await Promise.all([
+    const [sessions, knowledgeList, mcpList, apiConfigs] = await Promise.all([
       fetchSessionList(),
       fetchKnowledgeList().catch(() => []),
       fetchMCPServerList().catch(() => []),
+      fetchUserApiConfigs().catch(() => [] as UserApiConfigVO[]),
     ])
+    userApiConfigs.value = apiConfigs
+    // Restore selected API config from localStorage
+    const savedCfgId = localStorage.getItem('selectedConfigId')
+    const savedModelName = localStorage.getItem('selectedModelName')
+    if (savedCfgId) {
+      const match = apiConfigs.find(c => c.id === savedCfgId)
+      if (match) {
+        selectedApiConfig.value = match
+        const modelName = savedModelName && match.model.includes(savedModelName) ? savedModelName : match.model[0]
+        selectModel({
+          id: match.id || '',
+          name: modelName,
+          supportsThinking: false,
+          provider: match.name || '自定义',
+          configId: match.id,
+        })
+      }
+    }
     sessionList.value = sessions.map(mapSession)
     knowledgeBases.value = knowledgeList
     mockMCPList.value = mcpList
@@ -282,20 +350,24 @@ onMounted(async () => {
           :selectedModel="selectedModel"
           :selectedKnowledgeBase="selectedKnowledgeBase"
           :enableRag="enableRag"
+          :enableThinking="enableThinking"
           :knowledgeBases="knowledgeBases"
-          :showModelSelector="showModelSelector"
-          :showKnowledgeBaseSelector="showKnowledgeBaseSelector"
+          :userApiConfigs="userApiConfigs"
+          :selectedApiConfig="selectedApiConfig"
+          :mcps="mockMCPList"
+          :selectedMCPIds="selectedMCPIds"
           @update:inputText="inputText = $event"
           @sendMessage="sendMessage"
           @handleKeydown="handleKeydown"
           @cancelStreaming="cancelStreaming"
-          @selectModel="selectModel"
+          @selectModel="selectModelLocal"
           @selectKnowledgeBase="selectKnowledgeBase"
           @toggleRag="toggleRag"
-          @update:showModelSelector="showModelSelector = $event"
-          @update:showKnowledgeBaseSelector="showKnowledgeBaseSelector = $event"
+          @toggleThinking="enableThinking = !enableThinking"
           @fileSelected="onFileSelected"
           @removePendingFile="removePendingFile"
+          @selectApiConfig="selectApiConfig"
+          @toggleMCP="toggleMCPSelection"
         />
       </div>
     </main>
@@ -304,11 +376,14 @@ onMounted(async () => {
       :visible="showMCPDrawer"
       :servers="mockMCPList"
       @close="showMCPDrawer = false"
+      @refresh="refreshMCPList"
     />
 
     <APIConfigModal
       :visible="showAPIConfigModal"
+      :configs="userApiConfigs"
       @close="showAPIConfigModal = false"
+      @saved="refreshUserApiConfigs"
     />
   </div>
 </template>

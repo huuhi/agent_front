@@ -5,6 +5,7 @@ import type {
   KnowledgeVO,
   MCPServerVO,
   AttachedFileVO,
+  UserApiConfigVO,
 } from './types'
 
 const BASE_URL = 'http://100.106.145.17:8080'
@@ -32,7 +33,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   // Handle raw JSON array responses (like /history/{sessionId})
-  const ct = res.headers.get('content-type') || ''
   const text = await res.text()
 
   // Try to parse the response
@@ -72,11 +72,46 @@ export async function fetchMCPServerList(): Promise<MCPServerVO[]> {
   return request<MCPServerVO[]>('/mcp')
 }
 
+export async function addMCPServer(data: { name: string; url: string; description?: string; type?: string }): Promise<MCPServerVO> {
+  return request<MCPServerVO>('/mcp', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteMCPServer(id: string): Promise<void> {
+  await fetch(`${BASE_URL}/mcp?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+  })
+}
+
+export async function toggleMCPServer(id: string, available: boolean): Promise<MCPServerVO> {
+  return request<MCPServerVO>(`/mcp?id=${encodeURIComponent(id)}&available=${available}`, {
+    method: 'PATCH',
+  })
+}
+
 // ========== Models ==========
 export async function fetchModelList(baseUrl: string, token: string): Promise<string[]> {
   return request<string[]>(
     `/chat/model?baseUrl=${encodeURIComponent(baseUrl)}&token=${encodeURIComponent(token)}`
   )
+}
+
+// ========== User API Config ==========
+export async function fetchUserApiConfigs(): Promise<UserApiConfigVO[]> {
+  return request<UserApiConfigVO[]>('/user/api-config')
+}
+
+export async function saveUserApiConfig(config: Partial<UserApiConfigVO> & { baseUrl: string; apikey: string }): Promise<UserApiConfigVO> {
+  // 后端 POST 要求字段名是 APIKey (大写 AK)
+  const body = { ...config, APIKey: config.apikey }
+  delete (body as any).apikey
+  return request<UserApiConfigVO>('/user/api-config', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 // ========== File Upload ==========

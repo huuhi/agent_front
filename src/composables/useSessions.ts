@@ -1,7 +1,6 @@
 import { ref, computed } from 'vue'
 import { fetchSessionList, fetchMessages, deleteSession as apiDeleteSession } from '../api'
 import { groupMessages } from '../utils/markdown'
-import { mapAttachment } from '../utils/helpers'
 import type { SessionVO, KnowledgeVO, MCPServerVO } from '../api/types'
 import type { ComponentSession, ComponentMessage } from '../types/chat'
 

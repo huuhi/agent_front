@@ -5,12 +5,6 @@ export function useAutoScroll() {
   /** Whether the user has scrolled up enough to show the "back to bottom" button */
   const showScrollButton = ref(false)
 
-  function isNearBottom(): boolean {
-    const el = messageContainerRef.value
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 40
-  }
-
   function scrollToBottom() {
     // Need nextTick to wait for Vue to render new content into the DOM
     nextTick(() => {

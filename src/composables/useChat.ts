@@ -4,16 +4,18 @@ import { streamChat, buildChatDTO } from '../api/chat-stream'
 import { uploadFile, uploadImage } from '../api'
 import { mapFileType, friendlyError, isImageFile } from '../utils/helpers'
 import type { ChatUserMessageDTO } from '../api/types'
-import type { ComponentMessage, ComponentAttachment, ComponentToolCall, ToolSectionFragment, TextFragment } from '../types/chat'
+import type { ComponentMessage, ComponentAttachment, ComponentToolCall, ToolSectionFragment, TextFragment, ModelOption } from '../types/chat'
 
 export function useChat(
   messageList: Ref<ComponentMessage[]>,
   currentSessionId: Ref<string>,
-  selectedModel: Ref<{ id: string; name: string; supportsThinking: boolean; provider: string }>,
+  selectedModel: Ref<ModelOption>,
   enableRag: Ref<boolean>,
+  enableThinking: Ref<boolean>,
   refreshSessionList: () => Promise<void>,
   scrollToBottom: () => void,
   autoScrollIfNeeded: () => void,
+  selectedMCPIds?: Ref<string[]>,
 ) {
   const inputText = ref('')
   const isAiResponding = ref(false)
@@ -198,7 +200,10 @@ export function useChat(
       fileMessages,
       currentSessionId.value.startsWith('local-') ? undefined : currentSessionId.value,
       selectedModel.value,
-      enableRag.value
+      enableRag.value,
+      enableThinking.value,
+      undefined,
+      selectedMCPIds?.value
     )
 
     // --- Create placeholder AI message ---

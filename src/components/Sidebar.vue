@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ComponentSession } from '../types/chat'
-import type { MCPServerVO } from '../api/types'
 
 defineProps<{
   sessions: ComponentSession[]
