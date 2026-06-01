@@ -36,6 +36,11 @@ export function useSessions() {
   }
 
   async function createNewSession() {
+    // Don't create another empty session if current one is already a new local chat
+    if (currentSessionId.value.startsWith('local-') && messageList.value.length === 0) {
+      // Still scroll to bottom via the caller — just don't create a duplicate
+      return
+    }
     const newId = `local-${Date.now()}`
     sessionList.value.unshift({ id: newId, title: '新对话', createdAt: new Date().toISOString() })
     currentSessionId.value = newId

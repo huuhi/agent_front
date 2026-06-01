@@ -103,7 +103,20 @@ export interface ChatDTO {
   messages: ChatUserMessageDTO[]
   sessionId?: string
   skills?: string[]
-  MCPs?: string[]
+  MCPs?: number[]
   model?: ModelDTO
   enableRag?: boolean
+}
+
+// ========== MCP Server Item DTO (for add/update) ==========
+export interface McpServerItemDTO {
+  id?: number
+  strId?: string
+  url?: string
+  description?: string
+  name?: string
+  logoUrl?: string
+  type?: string
+  header?: Record<string, unknown>
+  available?: boolean
 }

@@ -6,6 +6,7 @@ import type {
   MCPServerVO,
   AttachedFileVO,
   UserApiConfigVO,
+  McpServerItemDTO,
 } from './types'
 
 const BASE_URL = 'http://100.106.145.17:8080'
@@ -68,28 +69,40 @@ export async function fetchKnowledgeList(): Promise<KnowledgeVO[]> {
 }
 
 // ========== MCP ==========
+/** GET /mcp — 获取用户的MCP列表 */
 export async function fetchMCPServerList(): Promise<MCPServerVO[]> {
   return request<MCPServerVO[]>('/mcp')
 }
 
-export async function addMCPServer(data: { name: string; url: string; description?: string; type?: string }): Promise<MCPServerVO> {
-  return request<MCPServerVO>('/mcp', {
+/** POST /mcp — 添加MCP服务器（传数组） */
+export async function addMCPServer(data: McpServerItemDTO): Promise<void> {
+  await request<void>('/mcp', {
     method: 'POST',
+    body: JSON.stringify([data]),
+  })
+}
+
+/** PUT /mcp — 更新MCP服务器 */
+export async function updateMCPServer(data: McpServerItemDTO): Promise<void> {
+  await request<void>('/mcp', {
+    method: 'PUT',
     body: JSON.stringify(data),
   })
 }
 
-export async function deleteMCPServer(id: string): Promise<void> {
-  await fetch(`${BASE_URL}/mcp?id=${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
-  })
+/** GET /mcp/{id} — 获取MCP服务器详情 */
+export async function fetchMCPServerDetail(id: number): Promise<MCPServerVO> {
+  return request<MCPServerVO>(`/mcp/${id}`)
 }
 
-export async function toggleMCPServer(id: string, available: boolean): Promise<MCPServerVO> {
-  return request<MCPServerVO>(`/mcp?id=${encodeURIComponent(id)}&available=${available}`, {
-    method: 'PATCH',
-  })
+/** GET /mcp/service — 从服务商获取MCP服务 */
+export async function fetchMCPServerFromService(): Promise<unknown> {
+  return request<unknown>('/mcp/service')
+}
+
+/** DELETE /mcp/{id} — 删除MCP服务器 */
+export async function deleteMCPServer(id: number): Promise<void> {
+  await request<void>(`/mcp/${id}`, { method: 'DELETE' })
 }
 
 // ========== Models ==========

@@ -73,18 +73,18 @@ const emit = defineEmits<{
         <path d="M9 22V10L23 22V10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <div class="space-y-3">
-        <!-- Thinking Block — always expandable, even during streaming -->
-        <div v-if="msg.thinking" class="mb-1">
-          <button @click="emit('toggleThinking', msg.id)" class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+        <!-- Thinking Block — collapsible, properly contained -->
+        <div v-if="msg.thinking" class="mb-1 w-full overflow-hidden">
+          <button @click="emit('toggleThinking', msg.id)" class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full text-left">
             <svg v-if="msg.thinking.completed" class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
             <svg v-else class="w-3.5 h-3.5 text-blue-500 shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             <span>{{ msg.thinking.completed ? '已深度思考' : '深度思考中...' }}</span>
             <span v-if="msg.thinking.durationMs" class="text-gray-300 mx-0.5">·</span>
             <span v-if="msg.thinking.durationMs" class="text-gray-500">{{ formatDuration(msg.thinking.durationMs) }}</span>
-            <svg class="w-3 h-3 text-gray-300 transition-transform duration-200" :class="expandedThinking.has(msg.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <svg class="w-3 h-3 text-gray-300 ml-auto shrink-0 transition-transform duration-200" :class="expandedThinking.has(msg.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <div v-show="expandedThinking.has(msg.id)" class="mt-1.5 pl-5">
-            <div class="text-xs text-gray-500 italic leading-relaxed bg-gray-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap">{{ msg.thinking.content }}</div>
+          <div v-show="expandedThinking.has(msg.id)" class="mt-2 w-full">
+            <div class="text-xs text-gray-500 italic leading-relaxed bg-gray-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">{{ msg.thinking.content }}</div>
           </div>
         </div>
         <div v-else-if="isAiResponding && isLastMessage" class="flex items-center gap-2 text-xs text-gray-400">

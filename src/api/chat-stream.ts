@@ -391,6 +391,6 @@ export function buildChatDTO(
       modelName: model.name,
       isThinking,
     },
-    MCPs: selectedMCPIds && selectedMCPIds.length > 0 ? selectedMCPIds : undefined,
+    MCPs: selectedMCPIds && selectedMCPIds.length > 0 ? selectedMCPIds.map(Number).filter(n => !isNaN(n)) : undefined,
   }
 }
