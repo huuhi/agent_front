@@ -5,13 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev       # Start Vite dev server on 100.106.145.17:5173
-npm run build     # vue-tsc --noEmit type-check + Vite production build
+npm run dev       # Start Vite dev server
+npm run build     # vue-tsc -b (project references) + Vite production build
 npm run preview   # Preview production build
-npm run vue-tsc   # Type-check only (no build)
 ```
 
-Dependencies are managed via `npm install`. No test framework is currently configured.
+Dependencies are managed via `npm install`. No test framework is currently configured. There is no standalone `vue-tsc` script — type checking runs as part of `npm run build` (`vue-tsc -b` enables project references build mode, not just `--noEmit`).
 
 ## Architecture Overview
 
@@ -91,7 +90,7 @@ ChatDTO includes `enableRag` (RAG toggle) and `model.isThinking` (deep thinking 
 
 ### Styling
 
-- **Tailwind CSS v4** with `@import "tailwindcss"` and custom `@theme` tokens for font families (Inter sans-serif / JetBrains Mono monospace).
+- **Tailwind CSS v4** with `@import "tailwindcss"` and custom `@theme` tokens for font families (Inter sans-serif / JetBrains Mono monospace). Tailwind v4 uses CSS-first configuration — there is no `tailwind.config.js`; all customization (colors, fonts, spacing) is done via `@theme` directives in `src/style.css`.
 - Markdown content styled via `.markdown-body` CSS class in `NexusAgent.vue` `<style>`.
 - Drawer/modal transitions using Vue `<Transition>`.
 - `marked` renderer is configured in TWO places: `NexusAgent.vue` (imported from `marked` directly) and `src/utils/markdown.ts`. Both configure the same code highlighting logic — the one in `NexusAgent.vue` is the primary and runs first due to module import order.
@@ -111,6 +110,7 @@ ChatDTO includes `enableRag` (RAG toggle) and `model.isThinking` (deep thinking 
 - WebSocket: `ws://100.106.145.17:8080/ws/1` pushes `{ type: "title", data: "..." }` events.
 - File upload: documents go to `POST /file?bizType=CHAT`, images to `POST /file/image`.
 - Unified response envelope `ApiResult<T>`: `{ code: 0, msg: "ok", data: T, total: number | null }`. Direct JSON arrays returned for some endpoints (e.g., `/history/{sessionId}`).
+- A full API reference (from tarslib/Widdershins) is available in [`后端接口.md`](后端接口.md) at the repo root, covering all controllers: ChatController, FileController, KnowledgeController, ChatHistoryController, UserController, CommonController, McpController.
 
 ### Configuration
 

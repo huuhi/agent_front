@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { renderMarkdown } from '../utils/markdown'
 import {
   highlightInput,
@@ -7,7 +8,6 @@ import {
   formatDuration,
   formatFileSize,
   getFileTypeColor,
-  generateThumbnail,
   isSingleImage,
 } from '../utils/helpers'
 import type { ComponentMessage } from '../types/chat'
@@ -29,6 +29,8 @@ const emit = defineEmits<{
   toggleToolStep: [id: string]
 }>()
 
+const lightboxUrl = ref('')
+
 
 </script>
 
@@ -36,31 +38,39 @@ const emit = defineEmits<{
   <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
     <!-- User Message -->
     <div v-if="msg.role === 'user'" class="max-w-[75%] space-y-2">
+      <!-- Attachments with real image previews -->
       <div v-if="msg.attachments && msg.attachments.length > 0" class="flex flex-wrap gap-1.5 justify-end">
-        <div v-if="isSingleImage(msg.attachments)" class="rounded-xl overflow-hidden border border-slate-100 shadow-sm w-48">
-          <div class="h-28 bg-slate-100 flex items-center justify-center overflow-hidden">
-            <img :src="generateThumbnail()" alt="" class="w-full h-full object-cover" />
-          </div>
-          <div class="px-2.5 py-1 bg-white flex items-center justify-between">
-            <span class="text-[11px] font-medium text-gray-600 truncate">{{ msg.attachments[0].name }}</span>
-            <span class="text-[10px] text-gray-400">{{ formatFileSize(msg.attachments[0].size) }}</span>
-          </div>
-        </div>
-        <template v-else>
-          <template v-for="att in msg.attachments" :key="att.id">
-            <template v-if="showAllAttachments.has(msg.id) || msg.attachments.indexOf(att) < 3">
-              <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border shadow-sm text-[11px]" :class="getFileTypeColor(att.type)">
-                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-if="att.type === 'document'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-else-if="att.type === 'code'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-else><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                <span class="font-medium truncate max-w-[80px]">{{ att.name }}</span>
-                <span class="text-gray-400">{{ formatFileSize(att.size) }}</span>
+        <template v-for="att in msg.attachments" :key="att.id">
+          <template v-if="showAllAttachments.has(msg.id) || msg.attachments.indexOf(att) < 3">
+            <!-- Image attachment -->
+            <div v-if="isSingleImage(msg.attachments) || att.type === 'image'"
+              class="rounded-xl overflow-hidden border border-slate-100 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+              :class="isSingleImage(msg.attachments) ? 'w-48' : 'w-28'"
+              @click="lightboxUrl = att.url"
+            >
+              <div class="bg-slate-100 flex items-center justify-center overflow-hidden" :class="isSingleImage(msg.attachments) ? 'h-28' : 'h-20'">
+                <img :src="att.url" alt="" class="w-full h-full object-cover" />
               </div>
-            </template>
+              <div class="px-2.5 py-1 bg-white flex items-center justify-between">
+                <span class="text-[11px] font-medium text-gray-600 truncate">{{ att.name }}</span>
+                <span class="text-[10px] text-gray-400 shrink-0">{{ formatFileSize(att.size) }}</span>
+              </div>
+            </div>
+            <!-- Document / Code attachment -->
+            <div v-else class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border shadow-sm text-[11px]" :class="getFileTypeColor(att.type)">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-if="att.type === 'document'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-else><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+              <span class="font-medium truncate max-w-[80px]">{{ att.name }}</span>
+              <span class="text-gray-400 shrink-0">{{ formatFileSize(att.size) }}</span>
+            </div>
           </template>
-          <button v-if="msg.attachments.length > 3 && !showAllAttachments.has(msg.id)" @click="emit('toggleAttachments', msg.id)" class="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 transition-colors">+{{ msg.attachments.length - 3 }}</button>
-          <button v-if="showAllAttachments.has(msg.id) && msg.attachments.length > 3" @click="emit('toggleAttachments', msg.id)" class="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 transition-colors">收起</button>
         </template>
+        <button v-if="msg.attachments.length > 3 && !showAllAttachments.has(msg.id)" @click="emit('toggleAttachments', msg.id)" class="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 transition-colors">+{{ msg.attachments.length - 3 }}</button>
+        <button v-if="showAllAttachments.has(msg.id) && msg.attachments.length > 3" @click="emit('toggleAttachments', msg.id)" class="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 transition-colors">收起</button>
+      </div>
+      <!-- Lightbox -->
+      <div v-if="lightboxUrl" @click="lightboxUrl = ''" class="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 cursor-pointer">
+        <img :src="lightboxUrl" class="max-w-full max-h-full rounded-xl shadow-2xl" @click.stop />
       </div>
       <div class="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap shadow-sm">{{ msg.content }}</div>
       <div class="text-xs text-gray-400 text-right">{{ formatTime(msg.timestamp) }}</div>

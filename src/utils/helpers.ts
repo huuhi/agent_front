@@ -77,7 +77,7 @@ export function getFileTypeColor(type: ComponentAttachment['type']): string {
 }
 
 export function mapAttachment(vo: AttachedFileVO): ComponentAttachment {
-  return { id: vo.id, name: vo.fileName, url: vo.fileUrl, type: mapFileType(vo.extension), size: vo.fileSize, ext: vo.extension }
+  return { id: String(vo.id), name: vo.fileName, url: vo.fileUrl, type: mapFileType(vo.extension), size: vo.fileSize, ext: vo.extension }
 }
 
 export function generateThumbnail(): string {

@@ -100,9 +100,11 @@ const selectedMCPIds = ref<string[]>([]);
 const {
   inputText,
   isAiResponding,
-  pendingFiles,
+  uploadedPreviews,
+  uploadingCount,
   onFileSelected,
-  removePendingFile,
+  handleFilePasted,
+  removePreview,
   handleKeydown,
   cancelStreaming,
   sendMessage,
@@ -478,7 +480,8 @@ onMounted(async () => {
           <ChatInput
             :inputText="inputText"
             :isAiResponding="isAiResponding"
-            :pendingFiles="pendingFiles"
+            :uploadedPreviews="uploadedPreviews"
+            :uploadingCount="uploadingCount"
             :selectedModel="selectedModel"
             :selectedKnowledgeBase="selectedKnowledgeBase"
             :enableRag="enableRag"
@@ -497,7 +500,8 @@ onMounted(async () => {
             @toggleRag="toggleRag"
             @toggleThinking="enableThinking = !enableThinking"
             @fileSelected="onFileSelected"
-            @removePendingFile="removePendingFile"
+            @filePasted="handleFilePasted"
+            @removePreview="removePreview"
             @selectApiConfig="selectApiConfig"
             @toggleMCP="toggleMCPSelection"
           />

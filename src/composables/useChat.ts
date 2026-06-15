@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { streamChat, buildChatDTO } from '../api/chat-stream'
-import { uploadFile, uploadImage } from '../api'
+import { uploadFile } from '../api'
 import { mapFileType, friendlyError, isImageFile } from '../utils/helpers'
 import type { ChatUserMessageDTO } from '../api/types'
 import type { ComponentMessage, ComponentAttachment, ComponentToolCall, ToolSectionFragment, TextFragment, ModelOption } from '../types/chat'
@@ -19,12 +19,15 @@ export function useChat(
 ) {
   const inputText = ref('')
   const isAiResponding = ref(false)
-  const pendingFiles = ref<File[]>([])
   const abortController = ref<AbortController | null>(null)
   const streamingContent = ref('')
   const streamingThinking = ref('')
   const streamingToolCalls = ref<Map<string, ComponentToolCall>>(new Map())
   const activePlaceholderId = ref<string | null>(null)
+
+  // ========== Immediate file upload on selection ==========
+  const uploadedPreviews = ref<ComponentAttachment[]>([])
+  const uploadingCount = ref(0)
 
   // ========== Fragment helpers (support interleaved text/tool cycles) ==========
 
@@ -51,17 +54,58 @@ export function useChat(
     }
   }
 
-  function onFileSelected(event: Event) {
+  async function onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement
     if (!input.files) return
-    for (const file of Array.from(input.files)) {
-      pendingFiles.value.push(file)
-    }
+    const files = Array.from(input.files)
     input.value = ''
+    for (const file of files) {
+      uploadingCount.value++
+      try {
+        const result = await uploadFile(file)
+        if (result.length > 0) {
+          const vo = result[0]
+          uploadedPreviews.value = [...uploadedPreviews.value, {
+            id: String(vo.id),
+            name: vo.fileName,
+            url: vo.fileUrl,
+            type: mapFileType(vo.extension),
+            size: vo.fileSize,
+            ext: vo.extension,
+          }]
+        }
+      } catch (e) {
+        console.error('[Upload]', e)
+      } finally {
+        uploadingCount.value--
+      }
+    }
   }
 
-  function removePendingFile(index: number) {
-    pendingFiles.value.splice(index, 1)
+  function removePreview(index: number) {
+    uploadedPreviews.value = uploadedPreviews.value.filter((_, i) => i !== index)
+  }
+
+  async function handleFilePasted(file: File) {
+    uploadingCount.value++
+    try {
+      const result = await uploadFile(file)
+      if (result.length > 0) {
+        const vo = result[0]
+        uploadedPreviews.value = [...uploadedPreviews.value, {
+          id: String(vo.id),
+          name: vo.fileName,
+          url: vo.fileUrl,
+          type: mapFileType(vo.extension),
+          size: vo.fileSize,
+          ext: vo.extension,
+        }]
+      }
+    } catch {
+      // silent
+    } finally {
+      uploadingCount.value--
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -106,79 +150,20 @@ export function useChat(
   // ========== Send message ==========
   async function sendMessage() {
     const text = inputText.value.trim()
-    if ((!text && pendingFiles.value.length === 0) || isAiResponding.value) return
+    const files = uploadedPreviews.value
+    if ((!text && files.length === 0) || isAiResponding.value) return
 
     isAiResponding.value = true
     abortController.value = new AbortController()
 
-    // --- Upload files first ---
-    const uploadedAttachments: ComponentAttachment[] = []
-    const fileMessages: ChatUserMessageDTO[] = []
+    // --- Build file messages from pre-uploaded files ---
+    const fileMessages: ChatUserMessageDTO[] = files.map(att => ({
+      type: att.type === 'image' ? 'IMAGE' : 'FILE' as 'FILE' | 'IMAGE',
+      content: att.url,
+      metadata: { fileUrl: att.url, fileName: att.name, extension: att.ext, id: att.id, fileSize: att.size },
+    }))
 
-    if (pendingFiles.value.length > 0) {
-      try {
-        for (const file of pendingFiles.value) {
-          let uploaded: { url: string; name: string; size: number; ext: string } | null = null
-
-          if (isImageFile(file)) {
-            const url = await uploadImage(file)
-            uploaded = { url, name: file.name, size: file.size, ext: file.name.split('.').pop() || '' }
-          } else {
-            const result = await uploadFile(file)
-            if (result.length > 0) {
-              const vo = result[0]
-              uploaded = { url: vo.fileUrl, name: vo.fileName, size: vo.fileSize, ext: vo.extension }
-            }
-          }
-
-          if (uploaded) {
-            uploadedAttachments.push({
-              id: `att-${Date.now()}-${uploadedAttachments.length}`,
-              name: uploaded.name,
-              url: uploaded.url,
-              type: mapFileType(uploaded.ext),
-              size: uploaded.size,
-              ext: uploaded.ext,
-            })
-            const msgType = isImageFile(file) ? 'IMAGE' : 'FILE'
-            fileMessages.push({
-              type: msgType as 'FILE' | 'IMAGE',
-              content: uploaded.url,
-              metadata: { fileUrl: uploaded.url, fileName: uploaded.name, extension: uploaded.ext },
-            })
-          }
-        }
-      } catch (e: unknown) {
-        const errMsg = e instanceof Error ? e.message : '文件上传失败'
-        pendingFiles.value = []
-        isAiResponding.value = false
-        abortController.value = null
-        messageList.value.push({
-          id: `msg-${Date.now()}`,
-          role: 'user',
-          content: text || '(文件)',
-          attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
-          timestamp: new Date().toISOString(),
-        })
-        messageList.value.push({
-          id: `msg-${Date.now()}`,
-          role: 'assistant',
-          content: '',
-          fragments: [{
-            kind: 'tools',
-            calls: [{
-              id: 'upload-error',
-              name: '文件上传',
-              status: 'error',
-              input: '',
-              output: friendlyError(errMsg),
-            }],
-          }],
-          timestamp: new Date().toISOString(),
-        })
-        return
-      }
-    }
+    const userAttachments = files.length > 0 ? files : undefined
 
     // --- Push user message ---
     const userMsgId = `msg-${Date.now()}`
@@ -186,11 +171,11 @@ export function useChat(
       id: userMsgId,
       role: 'user',
       content: text,
-      attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+      attachments: userAttachments,
       timestamp: new Date().toISOString(),
     })
     inputText.value = ''
-    pendingFiles.value = []
+    uploadedPreviews.value = []
 
     scrollToBottom()
 
@@ -477,12 +462,11 @@ export function useChat(
   return {
     inputText,
     isAiResponding,
-    pendingFiles,
-    streamingContent,
-    streamingThinking,
-    activePlaceholderId,
+    uploadedPreviews,
+    uploadingCount,
     onFileSelected,
-    removePendingFile,
+    handleFilePasted,
+    removePreview,
     handleKeydown,
     cancelStreaming,
     sendMessage,

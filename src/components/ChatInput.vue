@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { formatFileSize, isImageFile } from '../utils/helpers'
-import type { ModelOption } from '../types/chat'
+import { formatFileSize } from '../utils/helpers'
+import type { ModelOption, ComponentAttachment } from '../types/chat'
 import type { KnowledgeVO, UserApiConfigVO, MCPServerVO } from '../api/types'
 
 const props = defineProps<{
   inputText: string
   isAiResponding: boolean
-  pendingFiles: File[]
+  uploadedPreviews: ComponentAttachment[]
+  uploadingCount: number
   selectedModel: ModelOption
   selectedKnowledgeBase: { id: number | string; name: string; documentCount: number } | null
   enableRag: boolean
@@ -29,7 +30,8 @@ const emit = defineEmits<{
   toggleRag: []
   toggleThinking: []
   fileSelected: [event: Event]
-  removePendingFile: [index: number]
+  filePasted: [file: File]
+  removePreview: [index: number]
   selectApiConfig: [config: UserApiConfigVO | null]
   toggleMCP: [id: string]
 }>()
@@ -54,6 +56,7 @@ const knowledgeOverlayStyle = ref<Record<string, string>>({})
 const mcpOverlayStyle = ref<Record<string, string>>({})
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const previewImage = ref('')
 
 // ========== Click outside to close options panel ==========
 const optionsPanelRef = ref<HTMLElement | null>(null)
@@ -150,6 +153,20 @@ function handleAttachClick() {
   fileInput.value?.click()
 }
 
+function onPasteFile(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].kind === 'file') {
+      const file = items[i].getAsFile()
+      if (file) {
+        e.preventDefault()
+        emit('filePasted', file)
+      }
+    }
+  }
+}
+
 function onTextareaInput(e: Event) {
   const el = e.target as HTMLTextAreaElement
   emit('update:inputText', el.value)
@@ -187,22 +204,35 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
     <div class="bg-white border border-slate-100 rounded-2xl shadow-md transition-shadow duration-200 focus-within:shadow-lg relative">
       <textarea :value="inputText" @input="onTextareaInput"
         @keydown="emit('handleKeydown', $event)"
+        @paste="onPasteFile"
         placeholder="给 NexusAgent 发送消息..." rows="1"
         class="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none leading-relaxed chat-textarea"
       ></textarea>
 
-      <!-- Pending files -->
-      <div v-if="pendingFiles.length > 0" class="flex flex-wrap gap-1.5 px-4 pb-2">
-        <div v-for="(file, fi) in pendingFiles" :key="fi"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 border border-slate-100 text-[11px]"
+      <!-- Uploaded file previews -->
+      <div v-if="uploadedPreviews.length > 0 || uploadingCount > 0" class="flex flex-wrap gap-2 px-4 pb-2">
+        <!-- Uploading indicator -->
+        <div v-if="uploadingCount > 0" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-[11px] text-gray-400">
+          <div class="w-3 h-3 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin"></div>
+          <span>上传中...</span>
+        </div>
+        <!-- Preview cards -->
+        <div v-for="(att, fi) in uploadedPreviews" :key="att.id"
+          class="flex items-center gap-1.5 rounded-lg border border-slate-100 overflow-hidden"
+          :class="att.type === 'image' ? 'p-0.5 bg-slate-50' : 'px-2.5 py-1.5 bg-slate-50'"
         >
-          <svg class="w-3.5 h-3.5 shrink-0" :class="isImageFile(file) ? 'text-pink-400' : 'text-blue-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path v-if="isImageFile(file)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+          <!-- Image thumbnail -->
+          <img v-if="att.type === 'image'" :src="att.url"
+            class="w-12 h-12 rounded object-cover cursor-pointer"
+            @click="previewImage = att.url"
+          />
+          <!-- Document icon -->
+          <svg v-else class="w-4 h-4 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
           </svg>
-          <span class="text-gray-600 truncate max-w-[120px]">{{ file.name }}</span>
-          <span class="text-gray-400">{{ formatFileSize(file.size) }}</span>
-          <button @click="emit('removePendingFile', fi)" class="text-gray-400 hover:text-red-500 ml-0.5 transition-colors">
+          <span class="text-gray-600 truncate max-w-[100px] text-[11px]">{{ att.name }}</span>
+          <span class="text-gray-400 text-[10px]">{{ formatFileSize(att.size) }}</span>
+          <button @click="emit('removePreview', fi)" class="text-gray-400 hover:text-red-500 ml-0.5 transition-colors">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
         </div>
@@ -324,8 +354,8 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
             ><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
             <button v-else @click="emit('sendMessage')"
               class="absolute inset-0 flex items-center justify-center rounded-xl transition-all duration-150"
-              :class="(inputText.trim() || pendingFiles.length > 0) ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'"
-              :disabled="!inputText.trim() && pendingFiles.length === 0"
+              :class="(inputText.trim() || uploadedPreviews.length > 0) ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'"
+              :disabled="!inputText.trim() && uploadedPreviews.length === 0"
             ><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg></button>
           </div>
         </div>
@@ -392,6 +422,11 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
           </span>
         </label>
       </div>
+    </div>
+
+    <!-- Image lightbox -->
+    <div v-if="previewImage" @click="previewImage = ''" class="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 cursor-pointer">
+      <img :src="previewImage" class="max-w-full max-h-full rounded-xl shadow-2xl" @click.stop />
     </div>
   </div>
 </template>

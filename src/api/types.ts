@@ -16,11 +16,14 @@ export interface SessionVO {
 }
 
 export interface AttachedFileVO {
-  id: string
+  id: string | number
   fileName: string
   fileUrl: string
   fileSize: number
   extension: string
+  failReason?: string
+  uploadStatus?: string
+  createTime?: string | null
 }
 
 export interface ToolRequestVO {
@@ -85,11 +88,6 @@ export interface UserApiConfigVO {
   isDefault: boolean
   /** GET 响应是 apikey (小写)，POST 请求要用 APIKey (大写 AK) */
   apikey: string
-}
-
-// ========== File Upload ==========
-export interface FileUploadResponse {
-  url: string
 }
 
 // ========== Chat ==========

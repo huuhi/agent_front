@@ -177,9 +177,9 @@ export async function uploadImage(file: File): Promise<string> {
   }
 
   const text = await res.text()
-  const json: ApiResult<{ url: string }> = JSON.parse(text)
+  const json: ApiResult<string> = JSON.parse(text)
   if (json.code !== 0) {
     throw new Error(json.msg || '图片上传失败')
   }
-  return json.data!.url
+  return json.data ?? ''
 }
