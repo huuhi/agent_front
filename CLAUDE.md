@@ -14,7 +14,7 @@ Dependencies are managed via `npm install`. No test framework is currently confi
 
 ## Architecture Overview
 
-**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://100.106.145.17:8080`). Single-page app, no router.
+**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://106.52.234.62:8989`). Single-page app, no router.
 
 ### Entry Flow
 
@@ -104,10 +104,10 @@ ChatDTO includes `enableRag` (RAG toggle) and `model.isThinking` (deep thinking 
 
 ### Backend API Notes
 
-- Base URL: `http://100.106.145.17:8080`
+- Base URL: `http://106.52.234.62:8989`
 - Auth: Bearer token stored in `localStorage.getItem('token')`, settable via `window.__setToken('jwt')` in dev console.
 - Chat endpoint: `POST /chat/stream` returns SSE.
-- WebSocket: `ws://100.106.145.17:8080/ws/1` pushes `{ type: "title", data: "..." }` events.
+- WebSocket: `ws://106.52.234.62:8989/ws/1` pushes `{ type: "title", data: "..." }` events.
 - File upload: documents go to `POST /file?bizType=CHAT`, images to `POST /file/image`.
 - Unified response envelope `ApiResult<T>`: `{ code: 0, msg: "ok", data: T, total: number | null }`. Direct JSON arrays returned for some endpoints (e.g., `/history/{sessionId}`).
 - A full API reference (from tarslib/Widdershins) is available in [`后端接口.md`](后端接口.md) at the repo root, covering all controllers: ChatController, FileController, KnowledgeController, ChatHistoryController, UserController, CommonController, McpController.

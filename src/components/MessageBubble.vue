@@ -30,12 +30,28 @@ const emit = defineEmits<{
 }>()
 
 const lightboxUrl = ref('')
+const copiedMsgId = ref<string | null>(null)
+const isHovered = ref(false)
+
+async function copyMessage(id: string, content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    copiedMsgId.value = id
+    setTimeout(() => {
+      if (copiedMsgId.value === id) copiedMsgId.value = null
+    }, 1500)
+  } catch {
+    // Clipboard write may fail in non-HTTPS context — silently ignore
+  }
+}
 
 
 </script>
 
 <template>
-  <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+  <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+    @mouseenter="isHovered = true" @mouseleave="isHovered = false"
+  >
     <!-- User Message -->
     <div v-if="msg.role === 'user'" class="max-w-[75%] space-y-2">
       <!-- Attachments with real image previews -->
@@ -73,7 +89,25 @@ const lightboxUrl = ref('')
         <img :src="lightboxUrl" class="max-w-full max-h-full rounded-xl shadow-2xl" @click.stop />
       </div>
       <div class="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap shadow-sm">{{ msg.content }}</div>
-      <div class="text-xs text-gray-400 text-right">{{ formatTime(msg.timestamp) }}</div>
+      <div class="text-xs text-gray-400 flex items-center justify-end gap-3">
+        <button @click.stop="copyMessage(msg.id, msg.content)"
+          :class="[
+            copiedMsgId === msg.id ? 'text-emerald-500' : 'text-gray-400 hover:text-gray-600',
+            isHovered || copiedMsgId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          ]"
+          class="flex items-center gap-1 transition-all duration-150"
+          title="复制消息"
+        >
+          <template v-if="copiedMsgId === msg.id">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span class="text-[10px]">已复制</span>
+          </template>
+          <template v-else>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </template>
+        </button>
+        <span>{{ formatTime(msg.timestamp) }}</span>
+      </div>
     </div>
 
     <!-- Assistant Message -->
@@ -193,9 +227,23 @@ const lightboxUrl = ref('')
         <div v-else-if="msg.content" class="markdown-body text-sm" v-html="renderMarkdown(msg.content)"></div>
 
         <div class="text-xs text-gray-400 flex items-center gap-2">
+          <button @click.stop="copyMessage(msg.id, msg.content)"
+            :class="[
+              copiedMsgId === msg.id ? 'text-emerald-500' : 'text-gray-400 hover:text-gray-600',
+              isHovered || copiedMsgId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            ]"
+            class="flex items-center gap-1 transition-all duration-150"
+            title="复制消息"
+          >
+            <template v-if="copiedMsgId === msg.id">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              <span class="text-[10px]">已复制</span>
+            </template>
+            <template v-else>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </template>
+          </button>
           <span>{{ formatTime(msg.timestamp) }}</span>
-          <span class="w-1 h-1 rounded-full bg-gray-300"></span>
-          <span class="text-gray-400">{{ selectedModelName }}</span>
         </div>
       </div>
     </div>

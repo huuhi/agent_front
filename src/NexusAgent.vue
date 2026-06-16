@@ -85,23 +85,27 @@ const selectedKnowledgeBase = ref<{
   name: string;
   documentCount: number;
 } | null>(null);
-const enableRag = ref(true);
-const enableThinking = ref(true);
+const enableRag = ref(localStorage.getItem('enableRag') !== 'false');
+const enableThinking = ref(localStorage.getItem('enableThinking') !== 'false');
 const expandedThinking = ref<Set<string>>(new Set());
 const showAllAttachments = ref<Set<string>>(new Set());
 const expandedSteps = ref<Set<string>>(new Set());
 const toolChainState = ref<0 | 1 | 2>(
   Number(localStorage.getItem("toolChainState") || "0") as 0 | 1 | 2,
 );
+const sidebarCollapsed = ref(false);
 const showMCPDrawer = ref(false);
 const showAPIConfigModal = ref(false);
-const selectedMCPIds = ref<string[]>([]);
+const selectedMCPIds = ref<string[]>(
+  JSON.parse(localStorage.getItem('selectedMCPIds') || '[]')
+);
 
 const {
   inputText,
   isAiResponding,
   uploadedPreviews,
   uploadingCount,
+  uploadErrors,
   onFileSelected,
   handleFilePasted,
   removePreview,
@@ -172,10 +176,17 @@ function selectKnowledgeBase(kb: (typeof knowledgeBases.value)[0] | null) {
   selectedKnowledgeBase.value = kb
     ? { id: kb.id, name: kb.name, documentCount: 0 }
     : null;
+  localStorage.setItem('selectedKnowledgeBase', kb ? String(kb.id) : '');
 }
 
 function toggleRag() {
   enableRag.value = !enableRag.value;
+  localStorage.setItem('enableRag', String(enableRag.value));
+}
+
+function toggleEnableThinking() {
+  enableThinking.value = !enableThinking.value;
+  localStorage.setItem('enableThinking', String(enableThinking.value));
 }
 
 async function handleSelectSession(id: string) {
@@ -220,6 +231,7 @@ function toggleMCPSelection(id: string) {
   } else {
     selectedMCPIds.value = [...selectedMCPIds.value, id];
   }
+  localStorage.setItem('selectedMCPIds', JSON.stringify(selectedMCPIds.value));
 }
 
 async function refreshMCPList() {
@@ -237,19 +249,16 @@ function setToken(token: string) {
 // @ts-expect-error expose for dev console
 window.__setToken = setToken;
 
-// ========== URL ↔ sessionId sync ==========
-function updateUrlSessionId(id: string) {
-  const url = new URL(window.location.href);
+// ========== URL session path sync ==========
+function syncUrlSessionPath(id: string) {
   if (id && !id.startsWith("local-")) {
-    url.searchParams.set("sessionId", id);
+    history.replaceState(null, "", `/session/${id}`);
   } else {
-    url.searchParams.delete("sessionId");
+    history.replaceState(null, "", "/");
   }
-  history.replaceState(null, "", url.pathname + url.search);
 }
 
-// Sync URL whenever the session ID changes
-watch(currentSessionId, (id) => updateUrlSessionId(id), { immediate: false });
+watch(currentSessionId, (id) => syncUrlSessionPath(id), { immediate: false });
 
 // ========== Lifecycle ==========
 onMounted(async () => {
@@ -287,96 +296,103 @@ onMounted(async () => {
     sessionList.value = sessions.map(mapSession);
     knowledgeBases.value = knowledgeList;
     mockMCPList.value = mcpList;
-    if (sessions.length > 0) {
-      // Priority: URL param > localStorage > first session
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlSessionId = urlParams.get("sessionId");
-      const cachedId = localStorage.getItem("currentSessionId");
-      const targetId = (
-        urlSessionId && sessions.some((s) => s.sessionId === urlSessionId)
-          ? urlSessionId
-          : cachedId && sessions.some((s) => s.sessionId === cachedId)
-            ? cachedId
-            : sessions[0].sessionId
-      )!;
+    // Restore knowledge base selection from localStorage
+    const savedKbId = localStorage.getItem('selectedKnowledgeBase');
+    if (savedKbId) {
+      const match = knowledgeList.find((kb) => String(kb.id) === savedKbId);
+      if (match) {
+        selectedKnowledgeBase.value = { id: match.id, name: match.name, documentCount: 0 };
+      }
+    }
+    // Priority: URL path (/session/{id}) > localStorage > new chat
+    const pathMatch = window.location.pathname.match(/^\/session\/([a-f0-9-]+)$/i);
+    const pathId = pathMatch ? pathMatch[1] : null;
+    const cachedId = localStorage.getItem("currentSessionId");
+    const targetId = (
+      pathId && sessions.some((s) => s.sessionId === pathId)
+        ? pathId
+        : cachedId && sessions.some((s) => s.sessionId === cachedId)
+          ? cachedId
+          : null
+    );
+    if (targetId) {
       currentSessionId.value = targetId;
       messageList.value = await loadMessages(targetId);
-      await nextTick();
-      scrollToBottom();
+    } else {
+      currentSessionId.value = `local-${Date.now()}`;
     }
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : "加载失败";
   } finally {
     loading.value = false;
+    // Scroll to bottom after loading completes and DOM renders
+    if (messageList.value.length > 0) {
+      await nextTick();
+      scrollToBottom();
+    }
   }
 });
 </script>
 
 <template>
   <div class="flex h-screen bg-slate-50 text-gray-900 font-sans antialiased">
-    <Sidebar
-      :sessions="sessionList"
-      :currentSessionId="currentSessionId"
-      :loading="loading"
-      :errorMsg="errorMsg"
-      :showSessionDeleteConfirm="showSessionDeleteConfirm"
-      :mcpCount="mockMCPList.length"
-      @selectSession="handleSelectSession"
-      @createNewSession="handleCreateNewSession"
-      @requestDeleteSession="requestDeleteSession"
-      @confirmDelete="confirmDelete"
-      @openMCP="showMCPDrawer = true"
-      @openAPIConfig="showAPIConfigModal = true"
-    />
+    <div
+      class="overflow-hidden shrink-0 transition-all duration-300 ease-in-out"
+      :style="{ width: sidebarCollapsed ? '0px' : '260px' }"
+    >
+      <div class="w-[260px] h-full">
+        <Sidebar
+          :sessions="sessionList"
+          :currentSessionId="currentSessionId"
+          :loading="loading"
+          :errorMsg="errorMsg"
+          :showSessionDeleteConfirm="showSessionDeleteConfirm"
+          :mcpCount="mockMCPList.length"
+          @selectSession="handleSelectSession"
+          @createNewSession="handleCreateNewSession"
+          @requestDeleteSession="requestDeleteSession"
+          @confirmDelete="confirmDelete"
+          @openMCP="showMCPDrawer = true"
+          @openAPIConfig="showAPIConfigModal = true"
+        />
+      </div>
+    </div>
 
     <main class="flex-1 flex flex-col min-w-0">
       <header
-        class="h-14 min-h-[56px] border-b border-slate-100 bg-white flex items-center justify-between px-6"
+        class="h-12 min-h-[48px] border-b border-slate-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2"
       >
-        <div class="flex items-center gap-2 text-sm min-w-0">
-          <span class="text-gray-500 shrink-0">当前对话</span>
-          <svg
-            class="w-3 h-3 text-gray-300 shrink-0"
-            fill="currentColor"
-            viewBox="0 0 20 20"
+        <div class="flex items-center gap-2 min-w-0">
+          <button @click="sidebarCollapsed = !sidebarCollapsed"
+            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150"
+            :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
           >
-            <path
-              fill-rule="evenodd"
-              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span class="font-medium text-gray-800 truncate">{{
-            currentSession?.title ?? "选择对话"
-          }}</span>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-xs">N</span>
+            <span class="text-sm font-medium text-slate-800 truncate">{{ currentSession?.title || '新对话' }}</span>
+          </div>
         </div>
+
         <!-- Tool chain toggle — three states: hidden / collapsed / all expanded -->
         <button
           @click="toggleToolChain()"
-          class="flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors shrink-0"
+          class="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-medium transition-all duration-150 shrink-0"
           :class="[
             toolChainState === 0
-              ? 'text-slate-300 hover:text-slate-400'
-              : 'text-slate-500 bg-slate-50',
+              ? 'text-slate-300 hover:text-slate-500 hover:bg-slate-50'
+              : toolChainState === 1
+                ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                : 'text-blue-600 bg-blue-50 hover:bg-blue-100',
           ]"
         >
-          <svg
-            class="w-3 h-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-            />
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
           </svg>
-          工具调用链
-          <span class="text-[9px] opacity-60">{{
-            toolChainState === 0 ? "" : toolChainState === 1 ? "摘要" : "展开"
-          }}</span>
+          <span>{{ toolChainState === 0 ? '隐藏' : toolChainState === 1 ? '摘要' : '全部' }}</span>
         </button>
       </header>
 
@@ -482,6 +498,7 @@ onMounted(async () => {
             :isAiResponding="isAiResponding"
             :uploadedPreviews="uploadedPreviews"
             :uploadingCount="uploadingCount"
+            :uploadErrors="uploadErrors"
             :selectedModel="selectedModel"
             :selectedKnowledgeBase="selectedKnowledgeBase"
             :enableRag="enableRag"
@@ -498,12 +515,13 @@ onMounted(async () => {
             @selectModel="selectModelLocal"
             @selectKnowledgeBase="selectKnowledgeBase"
             @toggleRag="toggleRag"
-            @toggleThinking="enableThinking = !enableThinking"
+            @toggleThinking="toggleEnableThinking"
             @fileSelected="onFileSelected"
             @filePasted="handleFilePasted"
             @removePreview="removePreview"
             @selectApiConfig="selectApiConfig"
             @toggleMCP="toggleMCPSelection"
+            @clearUploadErrors="uploadErrors = []"
           />
         </div>
       </template>

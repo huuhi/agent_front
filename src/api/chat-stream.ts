@@ -1,6 +1,6 @@
 import type { ChatDTO, ChatUserMessageDTO } from './types'
 
-const BASE_URL = 'http://100.106.145.17:8080'
+const BASE_URL = 'http://106.52.234.62:8989'
 
 // ========== Types ==========
 

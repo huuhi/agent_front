@@ -9,7 +9,7 @@ import type {
   McpServerItemDTO,
 } from './types'
 
-const BASE_URL = 'http://100.106.145.17:8080'
+const BASE_URL = 'http://106.52.234.62:8989'
 
 function getToken(): string | null {
   return localStorage.getItem('token')

@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { streamChat, buildChatDTO } from '../api/chat-stream'
 import { uploadFile } from '../api'
-import { mapFileType, friendlyError, isImageFile } from '../utils/helpers'
+import { mapFileType, friendlyError, isImageFile, validateFiles } from '../utils/helpers'
 import type { ChatUserMessageDTO } from '../api/types'
 import type { ComponentMessage, ComponentAttachment, ComponentToolCall, ToolSectionFragment, TextFragment, ModelOption } from '../types/chat'
 
@@ -28,6 +28,7 @@ export function useChat(
   // ========== Immediate file upload on selection ==========
   const uploadedPreviews = ref<ComponentAttachment[]>([])
   const uploadingCount = ref(0)
+  const uploadErrors = ref<string[]>([])
 
   // ========== Fragment helpers (support interleaved text/tool cycles) ==========
 
@@ -59,6 +60,12 @@ export function useChat(
     if (!input.files) return
     const files = Array.from(input.files)
     input.value = ''
+    const errors = validateFiles(files, uploadedPreviews.value.length)
+    if (errors.length > 0) {
+      uploadErrors.value = errors
+      setTimeout(() => { uploadErrors.value = [] }, 5000)
+      return
+    }
     for (const file of files) {
       uploadingCount.value++
       try {
@@ -75,7 +82,9 @@ export function useChat(
           }]
         }
       } catch (e) {
-        console.error('[Upload]', e)
+        const msg = e instanceof Error ? e.message : '上传失败'
+        uploadErrors.value = [...uploadErrors.value, `"${file.name}" ${msg}`]
+        setTimeout(() => { uploadErrors.value = [] }, 5000)
       } finally {
         uploadingCount.value--
       }
@@ -87,6 +96,12 @@ export function useChat(
   }
 
   async function handleFilePasted(file: File) {
+    const errors = validateFiles([file], uploadedPreviews.value.length)
+    if (errors.length > 0) {
+      uploadErrors.value = errors
+      setTimeout(() => { uploadErrors.value = [] }, 5000)
+      return
+    }
     uploadingCount.value++
     try {
       const result = await uploadFile(file)
@@ -101,8 +116,10 @@ export function useChat(
           ext: vo.extension,
         }]
       }
-    } catch {
-      // silent
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '上传失败'
+      uploadErrors.value = [`"${file.name}" ${msg}`]
+      setTimeout(() => { uploadErrors.value = [] }, 5000)
     } finally {
       uploadingCount.value--
     }
@@ -464,6 +481,7 @@ export function useChat(
     isAiResponding,
     uploadedPreviews,
     uploadingCount,
+    uploadErrors,
     onFileSelected,
     handleFilePasted,
     removePreview,

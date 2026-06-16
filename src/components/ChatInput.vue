@@ -9,6 +9,7 @@ const props = defineProps<{
   isAiResponding: boolean
   uploadedPreviews: ComponentAttachment[]
   uploadingCount: number
+  uploadErrors: string[]
   selectedModel: ModelOption
   selectedKnowledgeBase: { id: number | string; name: string; documentCount: number } | null
   enableRag: boolean
@@ -34,6 +35,7 @@ const emit = defineEmits<{
   removePreview: [index: number]
   selectApiConfig: [config: UserApiConfigVO | null]
   toggleMCP: [id: string]
+  clearUploadErrors: []
 }>()
 
 // ========== Options panel state ==========
@@ -235,6 +237,19 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
           <button @click="emit('removePreview', fi)" class="text-gray-400 hover:text-red-500 ml-0.5 transition-colors">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Upload validation errors -->
+      <div v-if="uploadErrors.length > 0" class="px-4 pb-2">
+        <div v-for="(err, ei) in uploadErrors" :key="ei"
+          @click="emit('clearUploadErrors')"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 text-[11px] text-red-600 cursor-pointer"
+        >
+          <svg class="w-3 h-3 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+          </svg>
+          <span>{{ err }}</span>
         </div>
       </div>
 

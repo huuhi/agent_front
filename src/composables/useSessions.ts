@@ -70,7 +70,7 @@ export function useSessions() {
         currentSessionId.value = next.id
         messageList.value = await loadMessages(next.id)
       } else {
-        currentSessionId.value = ''
+        currentSessionId.value = `local-${Date.now()}`
         messageList.value = []
       }
     }

@@ -2,6 +2,33 @@ import hljs from 'highlight.js'
 import type { ComponentAttachment } from '../types/chat'
 import type { AttachedFileVO } from '../api/types'
 
+// ========== File upload validation ==========
+export const ALLOWED_EXTENSIONS = [
+  'txt', 'md', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'pdf', 'one', 'jpg', 'jpeg', 'png', 'gif', 'webp',
+] as const
+
+export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+export const MAX_FILE_COUNT = 10
+
+export function validateFile(file: File, currentCount: number): string | null {
+  if (file.size > MAX_FILE_SIZE) {
+    return `"${file.name}" 超过大小限制 (${formatFileSize(file.size)} / 10MB)`
+  }
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (!ext || !(ALLOWED_EXTENSIONS as readonly string[]).includes(ext)) {
+    return `不支持的文件格式 ".${ext || 'unknown'}"`
+  }
+  return null
+}
+
+export function validateFiles(files: File[], currentCount: number): string[] {
+  if (files.length + currentCount > MAX_FILE_COUNT) {
+    return [`最多上传 ${MAX_FILE_COUNT} 个文件，已有 ${currentCount} 个`]
+  }
+  return files.map((f) => validateFile(f, currentCount)).filter(Boolean) as string[]
+}
+
 // ========== File type detection ==========
 
 export function mapFileType(ext: string): ComponentAttachment['type'] {
