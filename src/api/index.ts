@@ -63,11 +63,6 @@ export async function deleteSession(sessionId: string): Promise<void> {
   })
 }
 
-// ========== Knowledge Bases ==========
-export async function fetchKnowledgeList(): Promise<KnowledgeVO[]> {
-  return request<KnowledgeVO[]>('/knowledge/list')
-}
-
 // ========== MCP ==========
 /** GET /mcp — 获取用户的MCP列表 */
 export async function fetchMCPServerList(): Promise<MCPServerVO[]> {
@@ -79,6 +74,14 @@ export async function addMCPServer(data: McpServerItemDTO): Promise<void> {
   await request<void>('/mcp', {
     method: 'POST',
     body: JSON.stringify([data]),
+  })
+}
+
+/** POST /mcp — 批量添加MCP服务器 */
+export async function batchAddMCPServer(dataList: McpServerItemDTO[]): Promise<void> {
+  await request<void>('/mcp', {
+    method: 'POST',
+    body: JSON.stringify(dataList),
   })
 }
 
@@ -182,4 +185,18 @@ export async function uploadImage(file: File): Promise<string> {
     throw new Error(json.msg || '图片上传失败')
   }
   return json.data ?? ''
+}
+
+// ========== MCP Config ==========
+/** GET /user/mcp-config — 获取当前 MCP API Key（脱敏显示） */
+export async function fetchMCPConfig(): Promise<string> {
+  const data = await request<string>('/user/mcp-config')
+  return data ?? ''
+}
+
+/** POST /user/mcp-config?token=... — 设置 MCP API Key */
+export async function saveMCPConfig(token: string): Promise<void> {
+  await request<void>(`/user/mcp-config?token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+  })
 }

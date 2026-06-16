@@ -98,7 +98,7 @@ export function formatDuration(ms: number | undefined): string {
 export function getFileTypeColor(type: ComponentAttachment['type']): string {
   switch (type) {
     case 'image': return 'bg-pink-50 text-pink-700 border-pink-100'
-    case 'document': return 'bg-blue-50 text-blue-700 border-blue-100'
+    case 'document': return 'bg-violet-50 text-violet-700 border-violet-100'
     case 'code': return 'bg-amber-50 text-amber-700 border-amber-100'
   }
 }
@@ -109,9 +109,9 @@ export function mapAttachment(vo: AttachedFileVO): ComponentAttachment {
 
 export function generateThumbnail(): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200">
-    <rect width="320" height="200" fill="#F1F5F9"/>
-    <rect x="80" y="40" width="160" height="120" rx="8" fill="#CBD5E1"/>
-    <circle cx="128" cy="76" r="14" fill="#94A3B8"/>
+    <rect width="320" height="200" fill="#F5F5F4"/>
+    <rect x="80" y="40" width="160" height="120" rx="8" fill="#D6D3D1"/>
+    <circle cx="128" cy="76" r="14" fill="#A8A29E"/>
     <polygon points="96,138 144,110 176,128 200,114 224,138" fill="#94A3B8"/>
   </svg>`
   return `data:image/svg+xml,${encodeURIComponent(svg)}`

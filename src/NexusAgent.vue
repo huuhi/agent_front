@@ -5,7 +5,6 @@ import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 import {
   fetchSessionList,
-  fetchKnowledgeList,
   fetchMCPServerList,
   fetchUserApiConfigs,
 } from "./api";
@@ -19,6 +18,7 @@ import MessageBubble from "./components/MessageBubble.vue";
 import ChatInput from "./components/ChatInput.vue";
 import MCPDrawer from "./components/MCPDrawer.vue";
 import APIConfigModal from "./components/APIConfigModal.vue";
+import ToastContainer from "./components/ToastContainer.vue";
 import type { ModelOption } from "./types/chat";
 
 // ========== Markdown renderer (must be configured before use) ==========
@@ -266,9 +266,8 @@ onMounted(async () => {
   connectTitleWs();
 
   try {
-    const [sessions, knowledgeList, mcpList, apiConfigs] = await Promise.all([
+    const [sessions, mcpList, apiConfigs] = await Promise.all([
       fetchSessionList(),
-      fetchKnowledgeList().catch(() => []),
       fetchMCPServerList().catch(() => []),
       fetchUserApiConfigs().catch(() => [] as UserApiConfigVO[]),
     ]);
@@ -294,16 +293,7 @@ onMounted(async () => {
       }
     }
     sessionList.value = sessions.map(mapSession);
-    knowledgeBases.value = knowledgeList;
     mockMCPList.value = mcpList;
-    // Restore knowledge base selection from localStorage
-    const savedKbId = localStorage.getItem('selectedKnowledgeBase');
-    if (savedKbId) {
-      const match = knowledgeList.find((kb) => String(kb.id) === savedKbId);
-      if (match) {
-        selectedKnowledgeBase.value = { id: match.id, name: match.name, documentCount: 0 };
-      }
-    }
     // Priority: URL path (/session/{id}) > localStorage > new chat
     const pathMatch = window.location.pathname.match(/^\/session\/([a-f0-9-]+)$/i);
     const pathId = pathMatch ? pathMatch[1] : null;
@@ -321,6 +311,9 @@ onMounted(async () => {
     } else {
       currentSessionId.value = `local-${Date.now()}`;
     }
+
+    // currentSessionId.value = `local-${Date.now()}`;
+
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : "加载失败";
   } finally {
@@ -335,7 +328,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-50 text-gray-900 font-sans antialiased">
+  <div class="flex h-screen bg-stone-50 text-stone-900 font-sans antialiased">
     <div
       class="overflow-hidden shrink-0 transition-all duration-300 ease-in-out"
       :style="{ width: sidebarCollapsed ? '0px' : '260px' }"
@@ -360,11 +353,11 @@ onMounted(async () => {
 
     <main class="flex-1 flex flex-col min-w-0">
       <header
-        class="h-12 min-h-[48px] border-b border-slate-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2"
+        class="h-12 min-h-[56px] border-b border-stone-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2"
       >
         <div class="flex items-center gap-2 min-w-0">
           <button @click="sidebarCollapsed = !sidebarCollapsed"
-            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150"
+            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
             :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -372,21 +365,21 @@ onMounted(async () => {
             </svg>
           </button>
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-xs">N</span>
-            <span class="text-sm font-medium text-slate-800 truncate">{{ currentSession?.title || '新对话' }}</span>
+            <span class="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-xs">N</span>
+            <span class="text-sm font-medium text-stone-800 truncate">{{ currentSession?.title || '新对话' }}</span>
           </div>
         </div>
 
-        <!-- Tool chain toggle — three states: hidden / collapsed / all expanded -->
+        <!-- Tool chain toggle — only visible on chat page -->
         <button
           @click="toggleToolChain()"
           class="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-medium transition-all duration-150 shrink-0"
           :class="[
             toolChainState === 0
-              ? 'text-slate-300 hover:text-slate-500 hover:bg-slate-50'
+              ? 'text-stone-300 hover:text-stone-500 hover:bg-stone-50'
               : toolChainState === 1
                 ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                : 'text-blue-600 bg-blue-50 hover:bg-blue-100',
+                : 'text-violet-600 bg-violet-50 hover:bg-violet-100',
           ]"
         >
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,12 +395,12 @@ onMounted(async () => {
         class="flex-1 flex flex-col items-center justify-center gap-4 px-6"
       >
         <div
-          class="w-6 h-6 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin"
+          class="w-6 h-6 rounded-full border-2 border-violet-200 border-t-violet-500 animate-spin"
         ></div>
-        <p class="text-xs text-gray-400">正在加载...</p>
+        <p class="text-xs text-stone-400">正在加载...</p>
       </div>
 
-      <!-- Message Area (scrollable) — only shown after loading -->
+      <!-- Message Area (scrollable) -->
       <template v-else>
         <div
           class="relative flex flex-col min-h-0"
@@ -441,10 +434,10 @@ onMounted(async () => {
                 class="flex flex-col items-center justify-center py-10 text-center"
               >
                 <div
-                  class="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center mb-6"
+                  class="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center mb-6"
                 >
                   <svg
-                    class="w-8 h-8 text-blue-500"
+                    class="w-8 h-8 text-violet-500"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -457,10 +450,10 @@ onMounted(async () => {
                     />
                   </svg>
                 </div>
-                <h3 class="text-lg font-semibold text-gray-700 mb-2">
+                <h3 class="text-lg font-semibold text-stone-700 mb-2">
                   开始新的对话
                 </h3>
-                <p class="text-sm text-gray-400 max-w-sm">
+                <p class="text-sm text-stone-400 max-w-sm">
                   向 NexusAgent 发送消息，或选择左侧的历史对话继续交流
                 </p>
               </div>
@@ -470,7 +463,7 @@ onMounted(async () => {
                 id="down-button"
                 v-if="showScrollButton"
                 @click="scrollToBottom"
-                class="absolute bottom-1 right-6 w-8 h-8 rounded-full flex items-center justify-center bg-white border border-slate-200 shadow-sm text-slate-400 hover:text-slate-600 transition-all duration-200 z-10"
+                class="absolute bottom-1 right-6 w-8 h-8 rounded-full flex items-center justify-center bg-white border border-stone-200 shadow-sm text-stone-400 hover:text-stone-600 transition-all duration-200 z-10"
               >
                 <svg
                   class="w-4 h-4"
@@ -490,7 +483,7 @@ onMounted(async () => {
 
         <!-- Input Zone — only after loading, mt-auto pushes to bottom when messages exist -->
         <div
-          class="px-6 pb-4 pt-2 bg-slate-50"
+          class="px-6 pb-4 pt-2 bg-stone-50"
           :class="messageList.length > 0 ? 'mt-auto' : 'mt-6'"
         >
           <ChatInput
@@ -540,6 +533,7 @@ onMounted(async () => {
       @close="showAPIConfigModal = false"
       @saved="refreshUserApiConfigs"
     />
+    <ToastContainer />
   </div>
 </template>
 
@@ -595,7 +589,7 @@ select {
 }
 
 .markdown-body {
-  color: #334155;
+  color: #44403c;
   line-height: 1.75;
   word-break: break-word;
 }
@@ -604,23 +598,23 @@ select {
   font-weight: 700;
   margin-top: 1.2em;
   margin-bottom: 0.5em;
-  color: #1e293b;
+  color: #292524;
 }
 .markdown-body h2 {
   font-size: 1.125em;
   font-weight: 700;
   margin-top: 1.2em;
   margin-bottom: 0.4em;
-  color: #1e293b;
+  color: #292524;
   padding-bottom: 0.15em;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e7e5e4;
 }
 .markdown-body h3 {
   font-size: 1em;
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.3em;
-  color: #1e293b;
+  color: #292524;
 }
 .markdown-body p {
   margin-bottom: 0.75em;
@@ -648,7 +642,7 @@ select {
 }
 .markdown-body strong {
   font-weight: 600;
-  color: #1e293b;
+  color: #292524;
 }
 .markdown-body em {
   font-style: italic;
@@ -658,15 +652,15 @@ select {
   font-size: 0.875em;
   padding: 0.2em 0.4em;
   border-radius: 4px;
-  background: #f1f5f9;
-  color: #0f172a;
+  background: #f5f5f4;
+  color: #1c1917;
 }
 .markdown-body pre {
   margin: 0.75em 0;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
 }
 .markdown-body pre code {
   display: block;
@@ -676,21 +670,21 @@ select {
   line-height: 1.6;
   background: transparent;
   border-radius: 0;
-  color: #334155;
+  color: #44403c;
 }
 .markdown-body hr {
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #e7e5e4;
   margin: 1.5em 0;
 }
 .markdown-body blockquote {
-  border-left: 3px solid #cbd5e1;
+  border-left: 3px solid #d6d3d1;
   padding-left: 1em;
   margin: 0.75em 0;
-  color: #64748b;
+  color: #78716c;
 }
 .markdown-body a {
-  color: #2563eb;
+  color: #7c3aed;
   text-decoration: underline;
 }
 .markdown-body table {
@@ -701,14 +695,14 @@ select {
 }
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid #e2e8f0;
+  border: 1px solid #e7e5e4;
   padding: 0.5em 0.75em;
   text-align: left;
 }
 .markdown-body th {
-  background: #f8fafc;
+  background: #fafaf9;
   font-weight: 600;
-  color: #1e293b;
+  color: #292524;
 }
 
 .code-block-wrapper {
@@ -724,7 +718,7 @@ select {
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
-  color: #94a3b8;
+  color: #a8a29e;
   opacity: 0;
   transition:
     opacity 0.15s,
@@ -735,8 +729,8 @@ select {
   opacity: 1;
 }
 .code-copy-btn:hover {
-  background: #f1f5f9;
-  color: #475569;
+  background: #f5f5f4;
+  color: #57534e;
 }
 .code-copy-btn.copied {
   opacity: 1;
@@ -744,7 +738,7 @@ select {
 }
 .hljs {
   background: transparent !important;
-  color: #334155 !important;
+  color: #44403c !important;
 }
 
 .drawer-enter-active,
@@ -790,10 +784,10 @@ select {
   background: transparent;
 }
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: #e7e5e4;
   border-radius: 999px;
 }
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+  background: #d6d3d1;
 }
 </style>

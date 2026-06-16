@@ -136,6 +136,30 @@ export function useChat(
   }
 
   // ========== Streaming helpers ==========
+  let _pendingPlaceholderUpdate: (() => void) | null = null
+  let _placeholderRaf: number | null = null
+
+  function schedulePlaceholderUpdate(updater: (msg: ComponentMessage) => void) {
+    if (!activePlaceholderId.value) return
+    const idx = messageList.value.findIndex(m => m.id === activePlaceholderId.value)
+    if (idx === -1) return
+    // Chain updates: compose with any pending update, then schedule a single rAF flush
+    const prev = _pendingPlaceholderUpdate
+    _pendingPlaceholderUpdate = prev
+      ? () => { prev(); updater(messageList.value[idx]); messageList.value = [...messageList.value] }
+      : () => { updater(messageList.value[idx]); messageList.value = [...messageList.value] }
+    if (!_placeholderRaf) {
+      _placeholderRaf = requestAnimationFrame(() => {
+        _placeholderRaf = null
+        const flush = _pendingPlaceholderUpdate
+        _pendingPlaceholderUpdate = null
+        flush?.()
+        autoScrollIfNeeded()
+      })
+    }
+  }
+
+  // Legacy: immediate update for structural changes (new message, finalize)
   function updatePlaceholder(updater: (msg: ComponentMessage) => void) {
     if (!activePlaceholderId.value) return
     const idx = messageList.value.findIndex(m => m.id === activePlaceholderId.value)
@@ -161,6 +185,8 @@ export function useChat(
     streamingContent.value = ''
     streamingThinking.value = ''
     streamingToolCalls.value = new Map()
+    if (_placeholderRaf) { cancelAnimationFrame(_placeholderRaf); _placeholderRaf = null }
+    _pendingPlaceholderUpdate = null
     activePlaceholderId.value = null
   }
 
@@ -239,7 +265,8 @@ export function useChat(
         if (typewriterPos < fullContent.length) {
           twFrame++
           const remaining = fullContent.length - typewriterPos
-          const step = Math.max(2, Math.ceil(remaining / 80))
+          // Smaller step for smoother character-by-character reveal
+          const step = Math.max(1, Math.ceil(remaining / 180))
           typewriterPos = Math.min(typewriterPos + step, fullContent.length)
           const shown = fullContent.slice(0, typewriterPos)
           streamingContent.value = shown
@@ -286,7 +313,6 @@ export function useChat(
     }
 
     function finishTypewriter() {
-      if (typewriterRaf) { cancelAnimationFrame(typewriterRaf); typewriterRaf = null }
       if (typewriterPos < fullContent.length) {
         typewriterPos = fullContent.length
         streamingContent.value = fullContent
@@ -332,38 +358,61 @@ export function useChat(
 
             // Flush any buffered text before showing the tool fragment
             finishTypewriter()
+
+            // Accumulate streaming arguments for the same tool call ID
+            const existingCall = streamingToolCalls.value.get(tc.id)
+            const mergedInput = existingCall
+              ? existingCall.input + tc.arguments
+              : tc.arguments
+
+            // Check if this is the FIRST chunk for this tool call (structural change needed)
+            const isNewCall = !existingCall
+
             const toolCall: ComponentToolCall = {
               id: tc.id,
               name: tc.name,
               status: 'running',
-              input: tc.arguments,
+              input: mergedInput,
             }
             streamingToolCalls.value.set(tc.id, toolCall)
 
-            updatePlaceholder((msg) => {
-              const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
-              const lastToolsFrag = toolFrags[toolFrags.length - 1]
+            if (isNewCall || accumulatedThinking) {
+              // Structural change: add new fragment or tool call — update immediately
+              updatePlaceholder((msg) => {
+                const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+                const lastToolsFrag = toolFrags[toolFrags.length - 1]
 
-              let toolsFrag = lastToolsFrag
-              if (!toolsFrag || accumulatedThinking) {
-                toolsFrag = { kind: 'tools', calls: [] }
-                if (accumulatedThinking) {
-                  toolsFrag.thinking = { content: accumulatedThinking, durationMs: 0, completed: true }
+                let toolsFrag = lastToolsFrag
+                if (!toolsFrag || accumulatedThinking) {
+                  toolsFrag = { kind: 'tools', calls: [] }
+                  if (accumulatedThinking) {
+                    toolsFrag.thinking = { content: accumulatedThinking, durationMs: 0, completed: true }
+                  }
+                  msg.fragments = [...(msg.fragments || []), toolsFrag]
                 }
-                msg.fragments = [...(msg.fragments || []), toolsFrag]
-              }
 
-              const existing = toolsFrag.calls.find(c => c.id === tc.id)
-              if (existing) {
-                Object.assign(existing, toolCall)
-              } else {
-                toolsFrag.calls.push(toolCall)
-              }
+                const existing = toolsFrag.calls.find(c => c.id === tc.id)
+                if (existing) {
+                  existing.input = mergedInput
+                } else {
+                  toolsFrag.calls.push(toolCall)
+                }
 
-              if (accumulatedThinking) {
-                msg.thinking = undefined
-              }
-            })
+                if (accumulatedThinking) {
+                  msg.thinking = undefined
+                }
+              })
+            } else {
+              // Throttled: only update input text, batched via rAF
+              schedulePlaceholderUpdate((msg) => {
+                const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+                const lastToolsFrag = toolFrags[toolFrags.length - 1]
+                if (lastToolsFrag) {
+                  const existing = lastToolsFrag.calls.find(c => c.id === tc.id)
+                  if (existing) existing.input = mergedInput
+                }
+              })
+            }
 
             if (accumulatedThinking) {
               streamingThinking.value = ''
@@ -374,22 +423,34 @@ export function useChat(
         },
         onToolResult(tr) {
           try {
-            const existing = streamingToolCalls.value.get(tr.id)
-            if (existing) {
-              existing.status = tr.isError ? 'error' : 'success'
-              existing.output = tr.result
+            // Capture scroll position BEFORE DOM update
+            autoScrollIfNeeded()
+
+            // Update the map's tool call for future lookups
+            const mapCall = streamingToolCalls.value.get(tr.id)
+            if (mapCall) {
+              mapCall.status = tr.isError ? 'error' : 'success'
+              mapCall.output = tr.result
             }
             updatePlaceholder((msg) => {
-              const toolsFrag = msg.fragments?.find((f): f is ToolSectionFragment => f.kind === 'tools')
-              if (toolsFrag) {
-                const tc = toolsFrag.calls.find(c => c.id === tr.id)
-                if (tc) {
-                  tc.status = tr.isError ? 'error' : 'success'
-                  tc.output = tr.result
+              // Search ALL tool fragments for the matching call ID
+              const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+              for (const toolsFrag of toolFrags) {
+                const idx = toolsFrag.calls.findIndex(c => c.id === tr.id)
+                if (idx !== -1) {
+                  // Create new object + new array to force reactivity
+                  const updated: ComponentToolCall = {
+                    ...toolsFrag.calls[idx],
+                    status: tr.isError ? 'error' : 'success',
+                    output: tr.result,
+                  }
+                  const newCalls = [...toolsFrag.calls]
+                  newCalls[idx] = updated
+                  toolsFrag.calls = newCalls
+                  break
                 }
               }
             })
-            autoScrollIfNeeded()
           } catch (e) { console.error('[onToolResult]', e) }
         },
         onSessionId(sid) {
@@ -438,6 +499,8 @@ export function useChat(
             streamingContent.value = ''
             streamingThinking.value = ''
             streamingToolCalls.value = new Map()
+            if (_placeholderRaf) { cancelAnimationFrame(_placeholderRaf); _placeholderRaf = null }
+            _pendingPlaceholderUpdate = null
             activePlaceholderId.value = null
           } catch (e) { console.error('[onError]', e) }
         },
@@ -454,6 +517,8 @@ export function useChat(
         streamingContent.value = ''
         streamingThinking.value = ''
         streamingToolCalls.value = new Map()
+        if (_placeholderRaf) { cancelAnimationFrame(_placeholderRaf); _placeholderRaf = null }
+        _pendingPlaceholderUpdate = null
         activePlaceholderId.value = null
       } else {
         const msg = err instanceof Error ? err.message : '未知错误'
