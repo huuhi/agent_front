@@ -3,6 +3,9 @@ import type {
   SessionVO,
   MessageVO,
   KnowledgeVO,
+  KnowledgeDetailVO,
+  KnowledgeFileDTO,
+  KnowledgeCreateDTO,
   MCPServerVO,
   AttachedFileVO,
   UserApiConfigVO,
@@ -199,4 +202,72 @@ export async function saveMCPConfig(token: string): Promise<void> {
   await request<void>(`/user/mcp-config?token=${encodeURIComponent(token)}`, {
     method: 'POST',
   })
+}
+
+// ========== Knowledge ==========
+
+/** GET /knowledge/list — 获取当前用户知识库列表 */
+export async function fetchKnowledgeList(): Promise<KnowledgeVO[]> {
+  return request<KnowledgeVO[]>('/knowledge/list')
+}
+
+/** GET /knowledge/{id} — 知识库详情，包括文件列表 */
+export async function fetchKnowledgeDetail(id: number): Promise<KnowledgeDetailVO> {
+  return request<KnowledgeDetailVO>(`/knowledge/${id}`)
+}
+
+/** POST /knowledge — 创建知识库 */
+export async function createKnowledge(data: KnowledgeCreateDTO): Promise<void> {
+  await request<void>('/knowledge', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+/** POST /knowledge/file — 将文件上传到指定知识库 */
+export async function uploadKnowledgeFile(data: KnowledgeFileDTO): Promise<void> {
+  await request<void>('/knowledge/file', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+// ========== User Files ==========
+
+/** GET /file — 获取用户文件列表 */
+export async function fetchUserFiles(fileName?: string, bizType?: string): Promise<AttachedFileVO[]> {
+  const params = new URLSearchParams()
+  // backend requires fileName — pass empty string for "all"
+  params.set('fileName', fileName ?? '')
+  if (bizType) params.set('bizType', bizType)
+  return request<AttachedFileVO[]>(`/file?${params.toString()}`)
+}
+
+/** POST /file?bizType=KNOWLEDGE — 上传文件到知识库 */
+export async function uploadKnowledgeFileBinary(file: File): Promise<AttachedFileVO[]> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('files', file)
+
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${BASE_URL}/file?bizType=KNOWLEDGE`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  }
+
+  const text = await res.text()
+  const json: ApiResult<AttachedFileVO[]> = JSON.parse(text)
+  if (json.code !== 0) {
+    throw new Error(json.msg || '文件上传失败')
+  }
+  return json.data ?? []
 }

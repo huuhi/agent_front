@@ -24,6 +24,7 @@ export interface AttachedFileVO {
   failReason?: string
   uploadStatus?: string
   createTime?: string | null
+  bizType?: string
 }
 
 export interface ToolRequestVO {
@@ -104,6 +105,37 @@ export interface ChatDTO {
   MCPs?: number[]
   model?: ModelDTO
   enableRag?: boolean
+}
+
+// ========== Knowledge Detail (with file list) ==========
+export interface KnowledgeBaseFileItem {
+  id: number
+  fileUrl: string
+  fileName: string
+  fileSize: number
+  failReason: string
+  uploadStatus: string
+  createTime: string
+  bizType: string
+  extension: string
+}
+
+export interface KnowledgeDetailVO extends KnowledgeVO {
+  knowledgeBaseFileList: KnowledgeBaseFileItem[]
+}
+
+// ========== Knowledge file association DTO ==========
+export interface KnowledgeFileDTO {
+  fileIds: number[]
+  knowledgeId: number
+}
+
+// ========== Knowledge creation DTO ==========
+export interface KnowledgeCreateDTO {
+  name: string
+  describe?: string
+  isPublic?: boolean
+  languageCode?: string | null
 }
 
 // ========== MCP Server Item DTO (for add/update) ==========

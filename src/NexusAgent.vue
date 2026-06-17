@@ -4,8 +4,6 @@ import { marked } from "marked";
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 import {
-  fetchSessionList,
-  fetchMCPServerList,
   fetchUserApiConfigs,
 } from "./api";
 import { setupCodeCopy } from "./utils/markdown";
@@ -13,12 +11,8 @@ import { useAutoScroll } from "./composables/useAutoScroll";
 import { useSessions } from "./composables/useSessions";
 import { useChat } from "./composables/useChat";
 import { useTitleWebSocket } from "./composables/useTitleWebSocket";
-import Sidebar from "./components/Sidebar.vue";
 import MessageBubble from "./components/MessageBubble.vue";
 import ChatInput from "./components/ChatInput.vue";
-import MCPDrawer from "./components/MCPDrawer.vue";
-import APIConfigModal from "./components/APIConfigModal.vue";
-import ToastContainer from "./components/ToastContainer.vue";
 import type { ModelOption } from "./types/chat";
 
 // ========== Markdown renderer (must be configured before use) ==========
@@ -69,10 +63,18 @@ const {
 } = useSessions();
 
 // State that useChat needs access to (to handle session updates)
-import { ref, nextTick, watch } from "vue";
+import { ref, nextTick } from "vue";
+import { useRoute } from "vue-router";
+import { useAppState } from "./composables/useAppState";
 import type { UserApiConfigVO } from "./api/types";
 
-const userApiConfigs = ref<UserApiConfigVO[]>([]);
+const route = useRoute();
+const {
+  showMCPDrawer,
+  showAPIConfigModal,
+  sidebarCollapsed,
+  userApiConfigs,
+} = useAppState();
 const selectedApiConfig = ref<UserApiConfigVO | null>(null);
 const selectedModel = ref<ModelOption>({
   id: "",
@@ -93,9 +95,6 @@ const expandedSteps = ref<Set<string>>(new Set());
 const toolChainState = ref<0 | 1 | 2>(
   Number(localStorage.getItem("toolChainState") || "0") as 0 | 1 | 2,
 );
-const sidebarCollapsed = ref(false);
-const showMCPDrawer = ref(false);
-const showAPIConfigModal = ref(false);
 const selectedMCPIds = ref<string[]>(
   JSON.parse(localStorage.getItem('selectedMCPIds') || '[]')
 );
@@ -129,14 +128,6 @@ const { connect: connectTitleWs } = useTitleWebSocket(sessionList);
 // ========== Actions ==========
 function selectModel(model: ModelOption) {
   selectedModel.value = model;
-}
-
-async function refreshUserApiConfigs() {
-  try {
-    userApiConfigs.value = await fetchUserApiConfigs();
-  } catch {
-    /* ignore */
-  }
 }
 
 function selectApiConfig(config: UserApiConfigVO | null) {
@@ -234,14 +225,6 @@ function toggleMCPSelection(id: string) {
   localStorage.setItem('selectedMCPIds', JSON.stringify(selectedMCPIds.value));
 }
 
-async function refreshMCPList() {
-  try {
-    mockMCPList.value = await fetchMCPServerList();
-  } catch {
-    /* ignore */
-  }
-}
-
 function setToken(token: string) {
   localStorage.setItem("token", token);
 }
@@ -249,29 +232,18 @@ function setToken(token: string) {
 // @ts-expect-error expose for dev console
 window.__setToken = setToken;
 
-// ========== URL session path sync ==========
-function syncUrlSessionPath(id: string) {
-  if (id && !id.startsWith("local-")) {
-    history.replaceState(null, "", `/session/${id}`);
-  } else {
-    history.replaceState(null, "", "/");
-  }
-}
-
-watch(currentSessionId, (id) => syncUrlSessionPath(id), { immediate: false });
-
 // ========== Lifecycle ==========
 onMounted(async () => {
   setupCodeCopy();
   connectTitleWs();
 
+  // Wait for session list from module-level singleton init
+  const sessions = await (await import('./composables/useSessions')).useSessions().initPromise;
+
   try {
-    const [sessions, mcpList, apiConfigs] = await Promise.all([
-      fetchSessionList(),
-      fetchMCPServerList().catch(() => []),
-      fetchUserApiConfigs().catch(() => [] as UserApiConfigVO[]),
-    ]);
+    const apiConfigs = await fetchUserApiConfigs().catch(() => [] as UserApiConfigVO[]);
     userApiConfigs.value = apiConfigs;
+
     // Restore selected API config from localStorage
     const savedCfgId = localStorage.getItem("selectedConfigId");
     const savedModelName = localStorage.getItem("selectedModelName");
@@ -292,16 +264,15 @@ onMounted(async () => {
         });
       }
     }
-    sessionList.value = sessions.map(mapSession);
-    mockMCPList.value = mcpList;
-    // Priority: URL path (/session/{id}) > localStorage > new chat
-    const pathMatch = window.location.pathname.match(/^\/session\/([a-f0-9-]+)$/i);
-    const pathId = pathMatch ? pathMatch[1] : null;
+
+    // Priority: route param (:sessionId) > localStorage > new chat
+    const pathId = route.params.sessionId as string | undefined;
     const cachedId = localStorage.getItem("currentSessionId");
+    const sessionVOs = sessionList.value;
     const targetId = (
-      pathId && sessions.some((s) => s.sessionId === pathId)
+      pathId && sessionVOs.some((s) => s.id === pathId)
         ? pathId
-        : cachedId && sessions.some((s) => s.sessionId === cachedId)
+        : cachedId && sessionVOs.some((s) => s.id === cachedId)
           ? cachedId
           : null
     );
@@ -311,13 +282,9 @@ onMounted(async () => {
     } else {
       currentSessionId.value = `local-${Date.now()}`;
     }
-
-    // currentSessionId.value = `local-${Date.now()}`;
-
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : "加载失败";
   } finally {
-    loading.value = false;
     // Scroll to bottom after loading completes and DOM renders
     if (messageList.value.length > 0) {
       await nextTick();
@@ -328,30 +295,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-stone-50 text-stone-900 font-sans antialiased">
-    <div
-      class="overflow-hidden shrink-0 transition-all duration-300 ease-in-out"
-      :style="{ width: sidebarCollapsed ? '0px' : '260px' }"
-    >
-      <div class="w-[260px] h-full">
-        <Sidebar
-          :sessions="sessionList"
-          :currentSessionId="currentSessionId"
-          :loading="loading"
-          :errorMsg="errorMsg"
-          :showSessionDeleteConfirm="showSessionDeleteConfirm"
-          :mcpCount="mockMCPList.length"
-          @selectSession="handleSelectSession"
-          @createNewSession="handleCreateNewSession"
-          @requestDeleteSession="requestDeleteSession"
-          @confirmDelete="confirmDelete"
-          @openMCP="showMCPDrawer = true"
-          @openAPIConfig="showAPIConfigModal = true"
-        />
-      </div>
-    </div>
-
-    <main class="flex-1 flex flex-col min-w-0">
+  <main class="flex-1 flex flex-col min-w-0">
       <header
         class="h-12 min-h-[56px] border-b border-stone-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2"
       >
@@ -519,22 +463,6 @@ onMounted(async () => {
         </div>
       </template>
     </main>
-
-    <MCPDrawer
-      :visible="showMCPDrawer"
-      :servers="mockMCPList"
-      @close="showMCPDrawer = false"
-      @refresh="refreshMCPList"
-    />
-
-    <APIConfigModal
-      :visible="showAPIConfigModal"
-      :configs="userApiConfigs"
-      @close="showAPIConfigModal = false"
-      @saved="refreshUserApiConfigs"
-    />
-    <ToastContainer />
-  </div>
 </template>
 
 <style>

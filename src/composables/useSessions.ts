@@ -1,21 +1,46 @@
 import { ref, computed } from 'vue'
-import { fetchSessionList, fetchMessages, deleteSession as apiDeleteSession } from '../api'
+import { fetchSessionList, fetchMessages, fetchMCPServerList, deleteSession as apiDeleteSession } from '../api'
 import { groupMessages } from '../utils/markdown'
 import type { SessionVO, KnowledgeVO, MCPServerVO } from '../api/types'
 import type { ComponentSession, ComponentMessage } from '../types/chat'
 
+// ========== Module-level singleton state ==========
+
+const sessionList = ref<ComponentSession[]>([])
+const currentSessionId = ref<string>('')
+const messageList = ref<ComponentMessage[]>([])
+const knowledgeBases = ref<KnowledgeVO[]>([])
+const mockMCPList = ref<MCPServerVO[]>([])
+const loading = ref(true)
+const errorMsg = ref('')
+const showSessionDeleteConfirm = ref<string | null>(null)
+
+const currentSession = computed(() => sessionList.value.find(s => s.id === currentSessionId.value) ?? null)
+
+/** Initialize session list & MCP list at module load — shared by all routes */
+async function initSessions() {
+  try {
+    const [sessions, mcpList] = await Promise.all([
+      fetchSessionList(),
+      fetchMCPServerList().catch(() => [] as MCPServerVO[]),
+    ])
+    sessionList.value = sessions.map(vo => ({
+      id: vo.sessionId,
+      title: vo.title,
+      createdAt: vo.createTime,
+    }))
+    mockMCPList.value = mcpList
+  } catch {
+    errorMsg.value = '加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+// Kick off immediately when module first imported (singleton)
+const initPromise = initSessions()
+
 export function useSessions() {
-  const sessionList = ref<ComponentSession[]>([])
-  const currentSessionId = ref<string>('')
-  const messageList = ref<ComponentMessage[]>([])
-  const knowledgeBases = ref<KnowledgeVO[]>([])
-  const mockMCPList = ref<MCPServerVO[]>([])
-  const loading = ref(true)
-  const errorMsg = ref('')
-  const showSessionDeleteConfirm = ref<string | null>(null)
-
-  const currentSession = computed(() => sessionList.value.find(s => s.id === currentSessionId.value) ?? null)
-
   function mapSession(vo: SessionVO): ComponentSession {
     return { id: vo.sessionId, title: vo.title, createdAt: vo.createTime }
   }
@@ -36,9 +61,7 @@ export function useSessions() {
   }
 
   async function createNewSession() {
-    // Don't create another empty session if current one is already a new local chat
     if (currentSessionId.value.startsWith('local-') && messageList.value.length === 0) {
-      // Still scroll to bottom via the caller — just don't create a duplicate
       return
     }
     const newId = `local-${Date.now()}`
@@ -95,6 +118,7 @@ export function useSessions() {
     errorMsg,
     showSessionDeleteConfirm,
     currentSession,
+    initPromise,
     loadMessages,
     selectSession,
     createNewSession,
