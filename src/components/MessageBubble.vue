@@ -112,10 +112,6 @@ async function copyMessage(id: string, content: string) {
 
     <!-- Assistant Message -->
     <div v-else class="flex gap-3 max-w-[85%]">
-      <svg class="w-8 h-8 shrink-0 mt-0.5" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="8" fill="#7C3AED"/>
-        <path d="M9 22V10L23 22V10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
       <div class="space-y-3 min-w-0">
         <!-- Thinking Block — collapsible, properly contained -->
         <div v-if="msg.thinking" class="mb-1 w-full overflow-hidden">

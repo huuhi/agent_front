@@ -10,6 +10,9 @@ import type {
   AttachedFileVO,
   UserApiConfigVO,
   McpServerItemDTO,
+  UserLoginDTO,
+  UserRegisterDTO,
+  UserPasswordDTO,
 } from './types'
 
 const BASE_URL = 'http://106.52.234.62:8989'
@@ -130,6 +133,39 @@ export async function saveUserApiConfig(config: Partial<UserApiConfigVO> & { bas
   return request<UserApiConfigVO>('/user/api-config', {
     method: 'POST',
     body: JSON.stringify(body),
+  })
+}
+
+// ========== Auth ==========
+
+/** POST /common/email — 发送邮箱验证码 */
+export async function sendEmailCode(email: string): Promise<void> {
+  await request<void>(`/common/email?email=${encodeURIComponent(email)}`, {
+    method: 'POST',
+  })
+}
+
+/** POST /user/login — 登录（验证码或密码） */
+export async function login(data: UserLoginDTO): Promise<string> {
+  return request<string>('/user/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+/** POST /user/register — 注册 */
+export async function register(data: UserRegisterDTO): Promise<string> {
+  return request<string>('/user/register', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+/** PUT /user/password — 设置密码 */
+export async function setPassword(data: UserPasswordDTO): Promise<void> {
+  await request<void>('/user/password', {
+    method: 'PUT',
+    body: JSON.stringify(data),
   })
 }
 

@@ -309,7 +309,6 @@ onMounted(async () => {
             </svg>
           </button>
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 shadow-xs">N</span>
             <span class="text-sm font-medium text-stone-800 truncate">{{ currentSession?.title || '新对话' }}</span>
           </div>
         </div>
@@ -355,7 +354,7 @@ onMounted(async () => {
             @scroll="handleScroll"
             class="flex-1 overflow-y-auto px-6 py-6"
           >
-            <div class="max-w-3xl mx-auto space-y-6">
+            <div class="max-w-4xl mx-auto space-y-6">
               <MessageBubble
                 v-for="msg in messageList"
                 :key="msg.id"
@@ -380,7 +379,7 @@ onMounted(async () => {
                 <div
                   class="w-16 h-16 rounded-2xl bg-violet-100 flex items-center justify-center mb-6"
                 >
-                  <svg
+                  <!-- <svg
                     class="w-8 h-8 text-violet-500"
                     fill="none"
                     stroke="currentColor"
@@ -392,7 +391,8 @@ onMounted(async () => {
                       stroke-width="1.5"
                       d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
                     />
-                  </svg>
+                  </svg> -->
+                  <img src="/public/logo.png" alt="">
                 </div>
                 <h3 class="text-lg font-semibold text-stone-700 mb-2">
                   开始新的对话

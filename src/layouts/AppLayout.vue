@@ -22,6 +22,7 @@ const {
   createNewSession,
   requestDeleteSession,
   confirmDelete,
+  reloadSessions,
 } = useSessions()
 
 const {
@@ -36,6 +37,16 @@ async function refreshMCPList() {
   try {
     mockMCPList.value = await fetchMCPServerList()
   } catch { /* ignore */ }
+}
+
+function handleLogout() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('currentSessionId')
+  localStorage.removeItem('selectedConfigId')
+  localStorage.removeItem('selectedModelName')
+  localStorage.removeItem('selectedKnowledgeBase')
+  localStorage.removeItem('selectedMCPIds')
+  router.push('/auth')
 }
 
 function handleSelectSession(id: string) {
@@ -67,6 +78,8 @@ onMounted(async () => {
   if (oldMatch) {
     router.replace(`/chat/${oldMatch[1]}`)
   }
+  // If init was skipped (user was on auth page), load data now
+  reloadSessions()
 })
 </script>
 
@@ -91,6 +104,7 @@ onMounted(async () => {
           @confirmDelete="handleConfirmDelete"
           @openMCP="showMCPDrawer = true"
           @openAPIConfig="showAPIConfigModal = true"
+          @logout="handleLogout"
         />
       </div>
     </div>

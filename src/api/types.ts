@@ -138,6 +138,30 @@ export interface KnowledgeCreateDTO {
   languageCode?: string | null
 }
 
+// ========== Auth ==========
+
+/** 登录 DTO */
+export interface UserLoginDTO {
+  email: string
+  password?: string
+  code?: string
+  type: 'CODE' | 'PASSWORD'
+}
+
+/** 注册 DTO */
+export interface UserRegisterDTO {
+  email: string
+  username?: string
+  code: string
+}
+
+/** 设置密码 DTO */
+export interface UserPasswordDTO {
+  email: string
+  code: string
+  password: string
+}
+
 // ========== MCP Server Item DTO (for add/update) ==========
 export interface McpServerItemDTO {
   id?: number

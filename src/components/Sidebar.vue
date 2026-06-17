@@ -17,19 +17,17 @@ const emit = defineEmits<{
   confirmDelete: [id: string, event: MouseEvent]
   openMCP: []
   openAPIConfig: []
+  logout: []
 }>()
 </script>
 
 <template>
   <aside class="w-[260px] min-w-[260px] bg-white border-r border-stone-100 flex flex-col h-full">
     <div class="px-4 pt-5 pb-3 border-b border-stone-100">
-      <div class="flex items-center gap-2 mb-4 px-1">
-        <svg class="w-7 h-7" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="8" fill="#7C3AED"/>
-          <path d="M9 22V10L23 22V10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+      <router-link to="/chat" class="flex items-center gap-2 mb-4 px-1 hover:opacity-80 transition-opacity">
+        <img src="/logo.png" alt="NexusAgent" class="w-10 h-10 rounded-xl object-contain" />
         <span class="font-semibold text-sm tracking-tight text-stone-800">NexusAgent</span>
-      </div>
+      </router-link>
       <button @click="emit('createNewSession')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition-all duration-150 border border-stone-100 hover:border-stone-200 shadow-sm">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         新建对话
@@ -64,6 +62,9 @@ const emit = defineEmits<{
           <ellipse cx="16" cy="24" rx="8" ry="5" fill="white" opacity="0.9"/>
         </svg>
         <div class="flex-1 min-w-0"><div class="text-sm font-medium text-stone-800 truncate">用户</div><div class="text-xs text-stone-400">已登录</div></div>
+        <button @click="emit('logout')" class="shrink-0 p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="退出登录">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
       </div>
       <!-- Navigation -->
       <div class="space-y-1 mb-2">

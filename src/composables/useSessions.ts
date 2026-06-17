@@ -19,6 +19,11 @@ const currentSession = computed(() => sessionList.value.find(s => s.id === curre
 
 /** Initialize session list & MCP list at module load — shared by all routes */
 async function initSessions() {
+  // Don't fetch for unauthenticated users — route guard handles the redirect
+  if (!localStorage.getItem('token')) {
+    loading.value = false
+    return
+  }
   try {
     const [sessions, mcpList] = await Promise.all([
       fetchSessionList(),
@@ -99,6 +104,29 @@ export function useSessions() {
     }
   }
 
+  /** Re-run init if the initial load was skipped (e.g. user wasn't logged in) */
+  async function reloadSessions() {
+    // If already loaded (sessions exist), skip
+    if (sessionList.value.length > 0 || !localStorage.getItem('token')) return
+    loading.value = true
+    try {
+      const [sessions, mcpList] = await Promise.all([
+        fetchSessionList(),
+        fetchMCPServerList().catch(() => [] as MCPServerVO[]),
+      ])
+      sessionList.value = sessions.map(vo => ({
+        id: vo.sessionId,
+        title: vo.title,
+        createdAt: vo.createTime,
+      }))
+      mockMCPList.value = mcpList
+    } catch {
+      errorMsg.value = '加载失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function refreshSessionList() {
     try {
       const sessions = await fetchSessionList()
@@ -119,6 +147,7 @@ export function useSessions() {
     showSessionDeleteConfirm,
     currentSession,
     initPromise,
+    reloadSessions,
     loadMessages,
     selectSession,
     createNewSession,
