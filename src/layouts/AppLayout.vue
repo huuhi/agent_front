@@ -84,10 +84,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-stone-50 text-stone-900 font-sans antialiased">
+  <div class="flex h-screen bg-stone-50 text-stone-900 font-sans antialiased relative">
     <!-- Sidebar: persistent across all routes -->
     <div
-      class="overflow-hidden shrink-0 transition-all duration-300 ease-in-out"
+      class="shrink-0 overflow-hidden transition-all duration-300 ease-in-out"
       :style="{ width: sidebarCollapsed ? '0px' : '260px' }"
     >
       <div class="w-[260px] h-full">
@@ -109,6 +109,34 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Collapsed top bar — visible when sidebar is hidden -->
+    <transition name="toolbar">
+      <div
+        v-if="sidebarCollapsed"
+        class="absolute top-1.5 left-2 flex items-center gap-2 z-20"
+      >
+        <img src="/logo.png" alt="NexusAgent" class="w-8 h-8 rounded-lg object-contain" />
+        <div class="flex items-center gap-0.5 bg-white border border-stone-200 rounded-xl shadow-sm px-1 h-9">
+          <button @click="sidebarCollapsed = false"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
+            title="展开侧边栏"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <button @click="handleCreateNewSession"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
+            title="新建对话"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </transition>
+
     <!-- Page content from router -->
     <router-view />
 
@@ -128,3 +156,20 @@ onMounted(async () => {
     <ToastContainer />
   </div>
 </template>
+
+<style scoped>
+.toolbar-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toolbar-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.toolbar-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.toolbar-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>

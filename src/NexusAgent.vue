@@ -67,7 +67,6 @@ import { ref, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import { useAppState } from "./composables/useAppState";
 import type { UserApiConfigVO } from "./api/types";
-
 const route = useRoute();
 const {
   showMCPDrawer,
@@ -296,24 +295,10 @@ onMounted(async () => {
 
 <template>
   <main class="flex-1 flex flex-col min-w-0">
-      <header
-        class="h-12 min-h-[56px] border-b border-stone-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2"
-      >
+      <header class="shrink-0 h-12 min-h-[48px] border-b border-stone-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 gap-2" :class="sidebarCollapsed ? 'pl-36' : ''">
         <div class="flex items-center gap-2 min-w-0">
-          <button @click="sidebarCollapsed = !sidebarCollapsed"
-            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
-            :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-          </button>
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="text-sm font-medium text-stone-800 truncate">{{ currentSession?.title || '新对话' }}</span>
-          </div>
+          <span class="text-sm font-medium text-stone-700 truncate">{{ currentSession?.title || '新对话' }}</span>
         </div>
-
-        <!-- Tool chain toggle — only visible on chat page -->
         <button
           @click="toggleToolChain()"
           class="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-medium transition-all duration-150 shrink-0"
@@ -331,7 +316,6 @@ onMounted(async () => {
           <span>{{ toolChainState === 0 ? '隐藏' : toolChainState === 1 ? '摘要' : '全部' }}</span>
         </button>
       </header>
-
       <!-- Loading state: full-area skeleton -->
       <div
         v-if="loading"

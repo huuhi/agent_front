@@ -201,7 +201,7 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto">
+  <div class="max-w-4xl mx-auto">
     <!-- ===== Textarea + bottom bar ===== -->
     <div class="bg-white border border-stone-100 rounded-2xl shadow-md transition-shadow duration-200 focus-within:shadow-lg relative">
       <textarea :value="inputText" @input="onTextareaInput"
