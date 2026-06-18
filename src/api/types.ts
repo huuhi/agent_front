@@ -53,7 +53,7 @@ export interface MessageVO {
 
 // ========== Knowledge ==========
 export interface KnowledgeVO {
-  id: number
+  id: string | number
   userId: number
   name: string
   describe: string
@@ -109,7 +109,7 @@ export interface ChatDTO {
 
 // ========== Knowledge Detail (with file list) ==========
 export interface KnowledgeBaseFileItem {
-  id: number
+  id: string | number
   fileUrl: string
   fileName: string
   fileSize: number
@@ -126,8 +126,8 @@ export interface KnowledgeDetailVO extends KnowledgeVO {
 
 // ========== Knowledge file association DTO ==========
 export interface KnowledgeFileDTO {
-  fileIds: number[]
-  knowledgeId: number
+  fileIds: (string | number)[]
+  knowledgeId: string | number
 }
 
 // ========== Knowledge creation DTO ==========

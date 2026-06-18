@@ -21,6 +21,16 @@ function getToken(): string | null {
   return localStorage.getItem('token')
 }
 
+/**
+ * JSON.parse wrapper that quotes large integers (>15 digits) to prevent
+ * JavaScript Number precision loss (Number.MAX_SAFE_INTEGER = 9e15).
+ * Backend IDs like 2045045522137423874 (~2e18) round to 2045045522137424000 otherwise.
+ */
+function safeParse<T>(text: string): T {
+  const safe = text.replace(/([:\s\[,])\s*(\d{16,})\s*([,\]\}\s])/g, '$1"$2"$3')
+  return JSON.parse(safe) as T
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -39,15 +49,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`)
   }
 
-  // Handle raw JSON array responses (like /history/{sessionId})
   const text = await res.text()
-
-  // Try to parse the response
+  const parsed = safeParse<ApiResult<T> | T>(text)
+  // Raw JSON array (starts with `[`) — return as-is
   if (text.startsWith('[')) {
-    return JSON.parse(text) as T
+    return parsed as T
   }
-
-  const json: ApiResult<T> = JSON.parse(text)
+  const json = parsed as ApiResult<T>
   if (json.code !== 0) {
     throw new Error(json.msg || `API error (code: ${json.code})`)
   }
@@ -191,7 +199,7 @@ export async function uploadFile(file: File): Promise<AttachedFileVO[]> {
   }
 
   const text = await res.text()
-  const json: ApiResult<AttachedFileVO[]> = JSON.parse(text)
+  const json = safeParse<ApiResult<AttachedFileVO[]>>(text)
   if (json.code !== 0) {
     throw new Error(json.msg || '文件上传失败')
   }
@@ -219,7 +227,7 @@ export async function uploadImage(file: File): Promise<string> {
   }
 
   const text = await res.text()
-  const json: ApiResult<string> = JSON.parse(text)
+  const json = safeParse<ApiResult<string>>(text)
   if (json.code !== 0) {
     throw new Error(json.msg || '图片上传失败')
   }
@@ -248,7 +256,7 @@ export async function fetchKnowledgeList(): Promise<KnowledgeVO[]> {
 }
 
 /** GET /knowledge/{id} — 知识库详情，包括文件列表 */
-export async function fetchKnowledgeDetail(id: number): Promise<KnowledgeDetailVO> {
+export async function fetchKnowledgeDetail(id: string | number): Promise<KnowledgeDetailVO> {
   return request<KnowledgeDetailVO>(`/knowledge/${id}`)
 }
 
@@ -301,7 +309,7 @@ export async function uploadKnowledgeFileBinary(file: File): Promise<AttachedFil
   }
 
   const text = await res.text()
-  const json: ApiResult<AttachedFileVO[]> = JSON.parse(text)
+  const json = safeParse<ApiResult<AttachedFileVO[]>>(text)
   if (json.code !== 0) {
     throw new Error(json.msg || '文件上传失败')
   }
