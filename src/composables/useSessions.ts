@@ -69,6 +69,13 @@ export function useSessions() {
     if (currentSessionId.value.startsWith('local-') && messageList.value.length === 0) {
       return
     }
+    // Reuse existing empty local session instead of piling up duplicates
+    const existingLocal = sessionList.value.find(s => s.id.startsWith('local-'))
+    if (existingLocal) {
+      currentSessionId.value = existingLocal.id
+      messageList.value = []
+      return
+    }
     const newId = `local-${Date.now()}`
     sessionList.value.unshift({ id: newId, title: '新对话', createdAt: new Date().toISOString() })
     currentSessionId.value = newId

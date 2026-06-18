@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { formatFileSize } from '../utils/helpers'
 import type { ModelOption, ComponentAttachment } from '../types/chat'
 import type { KnowledgeVO, UserApiConfigVO, MCPServerVO } from '../api/types'
@@ -59,6 +59,11 @@ const mcpOverlayStyle = ref<Record<string, string>>({})
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const previewImage = ref('')
+
+// Only show CHAT-type models in the model selector
+const chatModels = computed(() =>
+  (props.selectedApiConfig?.model || []).filter(m => m.type === 'CHAT')
+)
 
 // ========== Click outside to close options panel ==========
 const optionsPanelRef = ref<HTMLElement | null>(null)
@@ -389,7 +394,7 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
           :class="selectedApiConfig?.id === cfg.id ? 'bg-violet-50 text-violet-700 font-medium' : 'text-stone-600 hover:bg-stone-50'"
         >
           <div class="font-medium">{{ cfg.name || cfg.baseUrl }}</div>
-          <div class="text-[10px] text-stone-400 mt-0.5">{{ cfg.model?.length ? cfg.model.join('、') : '无模型' }}</div>
+          <div class="text-[10px] text-stone-400 mt-0.5">{{ cfg.model?.length ? cfg.model.filter(m => m.type === 'CHAT').map(m => m.name).join('、') : '无模型' }}</div>
         </div>
       </div>
     </div>
@@ -397,11 +402,11 @@ function selectKnowledgeBase(kb: KnowledgeVO | null) {
     <!-- Model sub-dropdown -->
     <div v-if="showModelOptions && selectedApiConfig?.model" :style="modelOverlayStyle" class="bg-white border border-stone-100 rounded-lg shadow-lg z-[999] overflow-hidden" @click.stop>
       <div class="py-1 max-h-[200px] overflow-y-auto">
-        <div v-for="m in selectedApiConfig.model" :key="m"
-          @click="selectModel({ id: selectedApiConfig.id || '', name: m, supportsThinking: false, provider: selectedApiConfig.name || '自定义', configId: selectedApiConfig.id })"
+        <div v-for="m in chatModels" :key="m.name"
+          @click="selectModel({ id: selectedApiConfig.id || '', name: m.name, supportsThinking: false, provider: selectedApiConfig.name || '自定义', configId: selectedApiConfig.id })"
           class="px-3 py-2 text-xs cursor-pointer transition-colors"
-          :class="selectedModel.name === m ? 'bg-violet-50 text-violet-700 font-medium' : 'text-stone-600 hover:bg-stone-50'"
-        >{{ m }}</div>
+          :class="selectedModel.name === m.name ? 'bg-violet-50 text-violet-700 font-medium' : 'text-stone-600 hover:bg-stone-50'"
+        >{{ m.name }}</div>
       </div>
     </div>
 

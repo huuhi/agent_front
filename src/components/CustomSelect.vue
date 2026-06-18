@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 const props = defineProps<{
   modelValue: string
   options: { value: string; label: string }[]
+  right?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -49,7 +50,8 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
     <!-- Dropdown -->
     <transition name="dropdown">
       <div v-if="open"
-        class="absolute top-full mt-1 left-0 min-w-full bg-white border border-stone-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden"
+        class="absolute top-full mt-1 min-w-full bg-white border border-stone-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden"
+        :class="props.right ? 'right-0' : 'left-0'"
       >
         <button
           v-for="opt in options" :key="opt.value"

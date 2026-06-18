@@ -80,12 +80,18 @@ export interface ModelDTO {
   isThinking: boolean
 }
 
+// ========== Model Item (CHAT / EMBEDDING) ==========
+export interface ModelItem {
+  name: string
+  type: 'CHAT' | 'EMBEDDING'
+}
+
 // ========== User API Config ==========
 export interface UserApiConfigVO {
   id?: string
   name: string | null
   baseUrl: string
-  model: string[]
+  model: ModelItem[]
   isDefault: boolean
   /** GET 响应是 apikey (小写)，POST 请求要用 APIKey (大写 AK) */
   apikey: string
@@ -128,6 +134,8 @@ export interface KnowledgeDetailVO extends KnowledgeVO {
 export interface KnowledgeFileDTO {
   fileIds: (string | number)[]
   knowledgeId: string | number
+  configId?: string
+  model?: string
 }
 
 // ========== Knowledge creation DTO ==========

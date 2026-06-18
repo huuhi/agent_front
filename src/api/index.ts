@@ -22,6 +22,23 @@ function getToken(): string | null {
 }
 
 /**
+ * Central header builder — injects auth token into every request.
+ */
+function buildHeaders(options?: RequestInit, skipAuth = false): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  }
+  const token = getToken()
+  if (token && !skipAuth) {
+    headers['token'] = token
+  }
+  if (options?.body && typeof options.body === 'string') {
+    headers['Content-Type'] = 'application/json'
+  }
+  return headers
+}
+
+/**
  * JSON.parse wrapper that quotes large integers (>15 digits) to prevent
  * JavaScript Number precision loss (Number.MAX_SAFE_INTEGER = 9e15).
  * Backend IDs like 2045045522137423874 (~2e18) round to 2045045522137424000 otherwise.
@@ -32,18 +49,27 @@ function safeParse<T>(text: string): T {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = getToken()
-  const headers: Record<string, string> = {
-    ...(options?.headers as Record<string, string>),
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  if (options?.body && typeof options.body === 'string') {
-    headers['Content-Type'] = 'application/json'
-  }
+  const isAuthPath = ['/user/login', '/user/register', '/user/password', '/common/email'].some(
+    p => path.startsWith(p)
+  )
+
+  const headers = buildHeaders(options, isAuthPath)
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+
+  // Handle 401 on non-auth paths → token expired, force re-login
+  if (res.status === 401 && !isAuthPath) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('currentSessionId')
+    localStorage.removeItem('selectedConfigId')
+    localStorage.removeItem('selectedModelName')
+    localStorage.removeItem('selectedKnowledgeBase')
+    localStorage.removeItem('selectedMCPIds')
+    if (window.location.pathname !== '/auth') {
+      window.location.href = '/auth'
+    }
+    throw new Error('登录已过期，请重新登录')
+  }
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`)
@@ -56,7 +82,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     return parsed as T
   }
   const json = parsed as ApiResult<T>
+
+  // Business-level NOT_LOGIN on non-auth paths → force re-login
   if (json.code !== 0) {
+    if (!isAuthPath && json.msg === 'NOT_LOGIN') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('currentSessionId')
+      localStorage.removeItem('selectedConfigId')
+      localStorage.removeItem('selectedModelName')
+      localStorage.removeItem('selectedKnowledgeBase')
+      localStorage.removeItem('selectedMCPIds')
+      if (window.location.pathname !== '/auth') {
+        window.location.href = '/auth'
+      }
+      throw new Error('登录已过期，请重新登录')
+    }
     throw new Error(json.msg || `API error (code: ${json.code})`)
   }
   return json.data as T
@@ -131,7 +171,17 @@ export async function fetchModelList(baseUrl: string, token: string): Promise<st
 
 // ========== User API Config ==========
 export async function fetchUserApiConfigs(): Promise<UserApiConfigVO[]> {
-  return request<UserApiConfigVO[]>('/user/api-config')
+  const raw = await request<any[]>('/user/api-config')
+  // Backend returns model items as JSON strings; parse them into objects
+  return (raw || []).map(item => ({
+    ...item,
+    model: (item.model || []).map((m: string) => {
+      if (typeof m === 'string') {
+        try { return JSON.parse(m) } catch { return { name: m, type: 'CHAT' as const } }
+      }
+      return m
+    }),
+  }))
 }
 
 export async function saveUserApiConfig(config: Partial<UserApiConfigVO> & { baseUrl: string; apikey: string }): Promise<UserApiConfigVO> {
@@ -179,18 +229,12 @@ export async function setPassword(data: UserPasswordDTO): Promise<void> {
 
 // ========== File Upload ==========
 export async function uploadFile(file: File): Promise<AttachedFileVO[]> {
-  const token = getToken()
   const formData = new FormData()
   formData.append('files', file)
 
-  const headers: Record<string, string> = {}
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   const res = await fetch(`${BASE_URL}/file?bizType=CHAT`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(),
     body: formData,
   })
 
@@ -207,18 +251,12 @@ export async function uploadFile(file: File): Promise<AttachedFileVO[]> {
 }
 
 export async function uploadImage(file: File): Promise<string> {
-  const token = getToken()
   const formData = new FormData()
   formData.append('file', file)
 
-  const headers: Record<string, string> = {}
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   const res = await fetch(`${BASE_URL}/file/image`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(),
     body: formData,
   })
 
@@ -289,18 +327,12 @@ export async function fetchUserFiles(fileName?: string, bizType?: string): Promi
 
 /** POST /file?bizType=KNOWLEDGE — 上传文件到知识库 */
 export async function uploadKnowledgeFileBinary(file: File): Promise<AttachedFileVO[]> {
-  const token = getToken()
   const formData = new FormData()
   formData.append('files', file)
 
-  const headers: Record<string, string> = {}
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   const res = await fetch(`${BASE_URL}/file?bizType=KNOWLEDGE`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(),
     body: formData,
   })
 

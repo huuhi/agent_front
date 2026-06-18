@@ -80,6 +80,7 @@ onMounted(async () => {
   }
   // If init was skipped (user was on auth page), load data now
   reloadSessions()
+  refreshUserApiConfigs()
 })
 </script>
 

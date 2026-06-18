@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { marked } from 'marked'
 import { formatFileSize, ALLOWED_EXTENSIONS, validateFile } from '../utils/helpers'
 import { useToast } from '../composables/useToast'
 import { useAppState } from '../composables/useAppState'
 import CustomSelect from '../components/CustomSelect.vue'
+import FilePreviewModal from '../components/FilePreviewModal.vue'
 import {
   fetchKnowledgeList,
   fetchKnowledgeDetail,
@@ -13,10 +13,10 @@ import {
   uploadKnowledgeFile,
   fetchUserFiles,
 } from '../api'
-import type { KnowledgeVO, KnowledgeDetailVO, AttachedFileVO } from '../api/types'
+import type { KnowledgeVO, KnowledgeDetailVO, AttachedFileVO, UserApiConfigVO } from '../api/types'
 
 const { show: showToast } = useToast()
-const { sidebarCollapsed } = useAppState()
+const { sidebarCollapsed, userApiConfigs } = useAppState()
 
 const loading = ref(true)
 const error = ref('')
@@ -37,16 +37,8 @@ const filteredFiles = computed(() => {
   )
 })
 
-// ── File preview ──
+// ── File preview (delegated to FilePreviewModal.vue) ──
 const previewFile = ref<AttachedFileVO | null>(null)
-const previewContent = ref('')
-const previewRenderedHtml = ref('')
-const previewLoading = ref(false)
-
-const isImageFile = (ext: string) => ['jpg','jpeg','png','gif','webp','svg','bmp','ico'].includes(ext.toLowerCase())
-const isTextFile = (ext: string) => ['md','txt','html','htm','css','js','ts','json','xml','yaml','yml','log','csv'].includes(ext.toLowerCase())
-const isMarkdownFile = (ext: string) => ext.toLowerCase() === 'md'
-const isHtmlFile = (ext: string) => ['html','htm'].includes(ext.toLowerCase())
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -90,33 +82,10 @@ function getIconBg(ext: string): string {
 
 function openPreview(file: AttachedFileVO) {
   previewFile.value = file
-  previewContent.value = ''
-  if (isTextFile(file.extension) && !isImageFile(file.extension)) {
-    loadPreviewContent(file)
-  }
-}
-
-async function loadPreviewContent(file: AttachedFileVO) {
-  previewLoading.value = true
-  try {
-    const res = await fetch(file.fileUrl)
-    const text = await res.text()
-    previewContent.value = text
-    if (isMarkdownFile(file.extension)) {
-      previewRenderedHtml.value = marked.parse(text) as string
-    }
-  } catch {
-    previewContent.value = '加载文件内容失败'
-    previewRenderedHtml.value = ''
-  } finally {
-    previewLoading.value = false
-  }
 }
 
 function closePreview() {
   previewFile.value = null
-  previewContent.value = ''
-  previewRenderedHtml.value = ''
 }
 
 // ── Knowledge ──
@@ -131,6 +100,38 @@ const creating = ref(false)
 const showAddFiles = ref(false)
 const selectedFileIds = ref<Set<string>>(new Set())
 const addingFiles = ref(false)
+
+// ── Embedding model selection ──
+const EMBEDDING_STORAGE_KEY = 'default_embedding_model'
+
+const embeddingModels = computed(() => {
+  const configs = userApiConfigs.value ?? []
+  const result: { value: string; configId: string; modelName: string; label: string }[] = []
+  for (const cfg of configs) {
+    if (!cfg.model) continue
+    for (const m of cfg.model) {
+      if (m.type === 'EMBEDDING') {
+        result.push({
+          value: `${cfg.id || ''}||${m.name}`,
+          configId: cfg.id || '',
+          modelName: m.name,
+          label: `[${cfg.name || cfg.baseUrl}] ${m.name}`,
+        })
+      }
+    }
+  }
+  return result
+})
+
+const selectedEmbeddingValue = ref('')
+
+watch(selectedEmbeddingValue, (val) => {
+  if (val) {
+    localStorage.setItem(EMBEDDING_STORAGE_KEY, val)
+  } else {
+    localStorage.removeItem(EMBEDDING_STORAGE_KEY)
+  }
+})
 
 // ========== Data ==========
 async function loadAll() {
@@ -240,11 +241,21 @@ function fileInCurrentKb(fileId: string): boolean {
 
 async function confirmAddFiles() {
   if (!selectedFileIds.value.size || !selectedKb.value) return
+
+  // Resolve embedding model selection
+  const selectedEmb = embeddingModels.value.find(o => o.value === selectedEmbeddingValue.value)
+  if (!selectedEmb) {
+    showToast('请先选择一个向量模型！', 'error')
+    return
+  }
+
   addingFiles.value = true
   try {
     await uploadKnowledgeFile({
       fileIds: Array.from(selectedFileIds.value),
       knowledgeId: selectedKb.value.id,
+      configId: selectedEmb.configId,
+      model: selectedEmb.modelName,
     })
     showToast(`已添加 ${selectedFileIds.value.size} 个文件`)
     showAddFiles.value = false
@@ -256,19 +267,20 @@ async function confirmAddFiles() {
   }
 }
 
-onMounted(loadAll)
+onMounted(() => {
+  loadAll()
+  // Restore cached embedding model
+  try {
+    const cached = localStorage.getItem(EMBEDDING_STORAGE_KEY)
+    if (cached) selectedEmbeddingValue.value = cached
+  } catch { /* ignore */ }
+})
 </script>
 
 <template>
   <main class="flex-1 flex flex-col min-w-0" style="background:#F5F4FD;font-family:'Nunito',sans-serif">
     <!-- ====== Header ====== -->
     <header class="shrink-0 h-14 flex items-center justify-between px-6 bg-white/70 backdrop-blur-md border-b border-[#E6E5F5]">
-      <div class="flex items-center gap-3">
-        <!-- <button @click="sidebarCollapsed = !sidebarCollapsed" class="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-[#7E84A3] hover:text-[#606CF3] hover:bg-[#F5F4FD] transition-all duration-200">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-        </button>
-        <h1 class="text-base font-bold text-[#2D325A] tracking-tight">文件中心</h1> -->
-      </div>
       <div class="flex items-center gap-1.5 bg-[#F5F4FD] rounded-2xl p-1">
         <button @click="activeTab = 'files'" class="relative px-4 py-1.5 text-[13px] font-semibold rounded-xl transition-all duration-200" :class="activeTab === 'files' ? 'text-[#606CF3] bg-white shadow-sm' : 'text-[#7E84A3] hover:text-[#2D325A]'">
           <span>全部文件</span>
@@ -277,7 +289,14 @@ onMounted(loadAll)
           <span>知识库</span>
         </button>
       </div>
-      <div class="w-8"></div>
+      <div class="flex items-center gap-2">
+        <span class="text-[12px] font-medium text-[#7E84A3] whitespace-nowrap">向量模型</span>
+        <CustomSelect
+          v-model="selectedEmbeddingValue"
+          :options="embeddingModels.map(m => ({ value: m.value, label: m.label }))"
+          right
+        />
+      </div>
     </header>
 
     <!-- ====== Loading ====== -->
@@ -466,24 +485,28 @@ onMounted(loadAll)
           </div>
           <template v-else>
             <!-- KB Header -->
-            <div class="shrink-0 px-6 py-3.5 border-b border-[#E6E5F5] flex items-center justify-between bg-white/40">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-9 h-9 rounded-xl bg-[#F5F4FD] flex items-center justify-center text-[#606CF3]">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2 8l6-4 6 4-6 4-6-4zM2 16l6-4 6 4-6 4-6-4zM14 12l6-4 6 4-6 4-6-4z"/><path d="M2 8v8M14 12v8"/></svg>
+            <div class="shrink-0 px-6 py-3.5 border-b border-[#E6E5F5] bg-white/40">
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-9 h-9 rounded-xl bg-[#F5F4FD] flex items-center justify-center text-[#606CF3]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2 8l6-4 6 4-6 4-6-4zM2 16l6-4 6 4-6 4-6-4zM14 12l6-4 6 4-6 4-6-4z"/><path d="M2 8v8M14 12v8"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <h3 class="text-[14px] font-bold text-[#2D325A] truncate">{{ selectedKb.name }}</h3>
+                    <p v-if="selectedKb.describe" class="text-[12px] text-[#7E84A3] mt-0.5 truncate">{{ selectedKb.describe }}</p>
+                  </div>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold" :class="selectedKb.isPublic ? 'bg-emerald-50 text-emerald-600' : 'bg-[#F5F4FD] text-[#7E84A3]'">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="selectedKb.isPublic ? 'bg-emerald-500' : 'bg-[#C7C7D1]'"></span>
+                    {{ selectedKb.isPublic ? '公开' : '私有' }}
+                  </span>
                 </div>
-                <div class="min-w-0">
-                  <h3 class="text-[14px] font-bold text-[#2D325A] truncate">{{ selectedKb.name }}</h3>
-                  <p v-if="selectedKb.describe" class="text-[12px] text-[#7E84A3] mt-0.5 truncate">{{ selectedKb.describe }}</p>
+                <div class="flex items-center gap-3 shrink-0">
+                  <button @click="openAddFiles" class="flex items-center gap-2 px-4 py-2 rounded-2xl text-[12px] font-semibold bg-[#606CF3] text-white hover:bg-[#5358E0] transition-all duration-200 active:scale-[0.97]">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    添加文件
+                  </button>
                 </div>
-                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold" :class="selectedKb.isPublic ? 'bg-emerald-50 text-emerald-600' : 'bg-[#F5F4FD] text-[#7E84A3]'">
-                  <span class="w-1.5 h-1.5 rounded-full" :class="selectedKb.isPublic ? 'bg-emerald-500' : 'bg-[#C7C7D1]'"></span>
-                  {{ selectedKb.isPublic ? '公开' : '私有' }}
-                </span>
               </div>
-              <button @click="openAddFiles" class="flex items-center gap-2 px-4 py-2 rounded-2xl text-[12px] font-semibold bg-[#606CF3] text-white hover:bg-[#5358E0] transition-all duration-200 active:scale-[0.97] shrink-0">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                添加文件
-              </button>
             </div>
 
             <!-- KB Files -->
@@ -629,80 +652,12 @@ onMounted(loadAll)
       </div>
     </transition>
 
-    <!-- ====== File Preview Modal (Glassmorphism) ====== -->
-    <transition name="preview">
-      <div v-if="previewFile" class="fixed inset-0 z-50 flex items-center justify-center p-6 md:p-10">
-        <div @click="closePreview" class="absolute inset-0 bg-[#2D325A]/30 backdrop-blur-sm cursor-pointer"></div>
-        <div @click.stop class="relative w-full max-w-4xl max-h-[85vh] bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_16px_48px_rgba(45,50,90,0.2)] border border-white/60 flex flex-col overflow-hidden">
-          <!-- Preview Header -->
-          <div class="shrink-0 px-6 py-4 border-b border-[#E6E5F5] flex items-center justify-between">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center" :class="getIconBg(previewFile.extension)">
-                <svg v-if="getFileIcon(previewFile.extension) === 'markdown'" class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7v10l4-4 4 4V7"/><path d="M16 7v10l4-4 4 4V7"/></svg>
-                <svg v-else-if="getFileIcon(previewFile.extension) === 'image'" class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
-                <svg v-else class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-              </div>
-              <div class="min-w-0">
-                <h3 class="text-[14px] font-bold text-[#2D325A] truncate">{{ previewFile.fileName }}</h3>
-                <p class="text-[12px] text-[#7E84A3]">{{ formatFileSize(previewFile.fileSize) }}</p>
-              </div>
-            </div>
-            <button @click="closePreview" class="w-8 h-8 rounded-xl flex items-center justify-center text-[#7E84A3] hover:text-[#2D325A] hover:bg-[#F5F4FD] transition-all duration-200">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <!-- Preview Body -->
-          <div class="flex-1 overflow-y-auto bg-[#Faf9fd]">
-            <!-- Loading -->
-            <div v-if="previewLoading && isTextFile(previewFile.extension) && !isImageFile(previewFile.extension)" class="flex items-center justify-center py-20">
-              <div class="flex flex-col items-center gap-3">
-                <div class="w-6 h-6 rounded-full border-[3px] border-[#E6E5F5] border-t-[#606CF3] animate-spin"></div>
-                <span class="text-sm font-medium text-[#7E84A3]">加载中...</span>
-              </div>
-            </div>
-
-            <!-- Image -->
-            <img v-else-if="isImageFile(previewFile.extension)"
-              :src="previewFile.fileUrl"
-              :alt="previewFile.fileName"
-              class="max-w-full max-h-[70vh] mx-auto p-6 object-contain"
-            />
-
-            <!-- Markdown rendered -->
-            <div v-else-if="isMarkdownFile(previewFile.extension) && previewRenderedHtml" class="p-6 markdown-preview" v-html="previewRenderedHtml">
-            </div>
-
-            <!-- HTML iframe -->
-            <iframe v-else-if="isHtmlFile(previewFile.extension) && previewContent"
-              :srcdoc="previewContent"
-              class="w-full h-[65vh] border-0"
-              sandbox="allow-same-origin"
-              title="HTML Preview"
-            ></iframe>
-
-            <!-- Text fallback -->
-            <pre v-else-if="previewContent" class="p-6 text-sm text-[#2D325A] leading-relaxed whitespace-pre-wrap font-mono">{{ previewContent }}</pre>
-
-            <!-- Unsupported / download -->
-            <div v-else-if="!isTextFile(previewFile.extension)" class="flex flex-col items-center justify-center py-20 gap-4">
-              <div class="w-14 h-14 rounded-2xl bg-[#F5F4FD] border border-[#E6E5F5] flex items-center justify-center">
-                <svg class="w-6 h-6 text-[#C7C7D1]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              </div>
-              <a :href="previewFile.fileUrl" target="_blank" class="px-5 py-2.5 rounded-2xl text-[13px] font-semibold bg-[#606CF3] text-white hover:bg-[#5358E0] transition-all duration-200 inline-flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                下载文件
-              </a>
-            </div>
-
-            <!-- No content yet (text files that haven't loaded) -->
-            <div v-else class="flex items-center justify-center py-20">
-              <span class="text-sm text-[#7E84A3]">点击加载内容</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <!-- ====== File Preview Modal (standalone component) ====== -->
+    <FilePreviewModal
+      :file="previewFile"
+      :visible="!!previewFile"
+      @close="closePreview"
+    />
   </main>
 </template>
 
@@ -719,71 +674,4 @@ onMounted(loadAll)
   opacity: 0;
   transform: scale(0.95) translateY(-8px);
 }
-
-/* Preview Modal Transition */
-.preview-enter-active {
-  transition: opacity 0.25s ease;
-}
-.preview-leave-active {
-  transition: opacity 0.2s ease;
-}
-.preview-enter-from,
-.preview-leave-to {
-  opacity: 0;
-}
-.preview-enter-active > div:last-child {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
-}
-.preview-leave-active > div:last-child {
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-.preview-enter-from > div:last-child {
-  transform: scale(0.92) translateY(12px);
-  opacity: 0;
-}
-.preview-leave-to > div:last-child {
-  transform: scale(0.96) translateY(6px);
-  opacity: 0;
-}
-
-/* Markdown preview styles */
-.markdown-preview h1 { font-size: 1.5em; font-weight: 700; margin: 1em 0 0.5em; color: #2D325A; }
-.markdown-preview h2 { font-size: 1.25em; font-weight: 700; margin: 1em 0 0.4em; color: #2D325A; }
-.markdown-preview h3 { font-size: 1.1em; font-weight: 600; margin: 0.8em 0 0.3em; color: #2D325A; }
-.markdown-preview p { margin-bottom: 0.6em; line-height: 1.7; color: #444; }
-.markdown-preview ul, .markdown-preview ol { margin-bottom: 0.6em; padding-left: 1.5em; }
-.markdown-preview li { margin-bottom: 0.2em; }
-.markdown-preview code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85em;
-  padding: 0.15em 0.4em;
-  border-radius: 6px;
-  background: #F5F4FD;
-  color: #606CF3;
-}
-.markdown-preview pre {
-  margin: 0.8em 0;
-  padding: 1em;
-  border-radius: 12px;
-  background: #F5F4FD;
-  border: 1px solid #E6E5F5;
-  overflow-x: auto;
-}
-.markdown-preview pre code {
-  background: none;
-  padding: 0;
-  color: #2D325A;
-}
-.markdown-preview blockquote {
-  border-left: 3px solid #606CF3;
-  padding-left: 1em;
-  margin: 0.6em 0;
-  color: #7E84A3;
-}
-.markdown-preview a { color: #606CF3; text-decoration: underline; }
-.markdown-preview hr { border: none; border-top: 1px solid #E6E5F5; margin: 1.2em 0; }
-.markdown-preview table { border-collapse: collapse; width: 100%; margin: 0.6em 0; font-size: 0.875em; }
-.markdown-preview th, .markdown-preview td { border: 1px solid #E6E5F5; padding: 0.4em 0.6em; text-align: left; }
-.markdown-preview th { background: #F5F4FD; font-weight: 600; color: #2D325A; }
-.markdown-preview img { max-width: 100%; border-radius: 12px; }
 </style>

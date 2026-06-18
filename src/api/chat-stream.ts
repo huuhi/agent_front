@@ -143,7 +143,7 @@ export async function streamChat(
     'Content-Type': 'application/json',
   }
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+    headers['token'] = `${token}`
   }
 
   let response: Response

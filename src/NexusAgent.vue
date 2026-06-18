@@ -132,7 +132,7 @@ function selectModel(model: ModelOption) {
 function selectApiConfig(config: UserApiConfigVO | null) {
   selectedApiConfig.value = config;
   if (config) {
-    const modelName = config.model[0] || config.name || "未命名模型";
+    const modelName = config.model[0]?.name || config.name || "未命名模型";
     selectModel({
       id: config.id || "",
       name: modelName,
@@ -251,9 +251,9 @@ onMounted(async () => {
       if (match) {
         selectedApiConfig.value = match;
         const modelName =
-          savedModelName && match.model.includes(savedModelName)
+          savedModelName && match.model.map(m => m.name).includes(savedModelName)
             ? savedModelName
-            : match.model[0];
+            : match.model[0]?.name || match.name || "未命名模型";
         selectModel({
           id: match.id || "",
           name: modelName,
