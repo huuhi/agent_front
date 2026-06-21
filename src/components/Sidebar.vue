@@ -94,6 +94,15 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
       <!-- Nav links -->
       <div class="shrink-0 px-3 pb-1 space-y-0.5">
+        <!-- 文件库 -->
+        <router-link to="/files"
+          class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150"
+          :class="$route.path === '/files' || $route.path.startsWith('/files') ? 'bg-[#F5F4FD] text-[#606CF3] font-semibold' : 'text-[#7E84A3] hover:text-[#2D325A] hover:bg-[#F5F4FD]/50'"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+          <span>文件库</span>
+        </router-link>
+        <!-- 知识库 -->
         <router-link to="/knowledge"
           class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150"
           :class="$route.path === '/knowledge' || $route.path.startsWith('/knowledge') ? 'bg-[#F5F4FD] text-[#606CF3] font-semibold' : 'text-[#7E84A3] hover:text-[#2D325A] hover:bg-[#F5F4FD]/50'"

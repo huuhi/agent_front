@@ -22,6 +22,11 @@ const routes = [
         component: () => import('../NexusAgent.vue'),
       },
       {
+        path: 'files',
+        name: 'files',
+        component: () => import('../pages/FilesPage.vue'),
+      },
+      {
         path: 'knowledge',
         name: 'knowledge',
         component: () => import('../pages/KnowledgeBasePage.vue'),

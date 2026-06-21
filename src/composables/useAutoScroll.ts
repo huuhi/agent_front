@@ -33,22 +33,36 @@ export function useAutoScroll() {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
   }
 
-  // ── Smart anchor scroll (rAF-batched) ──────────────────────────────
+  // ── Dual-check anchor scroll (rAF-batched) ─────────────────────────
 
   let _scrollRaf: number | null = null
 
   /**
-   * Smart auto-scroll: called AFTER content has been committed to the DOM.
-   * - Uses requestAnimationFrame to wait for the browser's layout/paint cycle.
-   * - Only scrolls if the user is near the bottom (within SCROLL_THRESHOLD).
-   * - Batches multiple calls within a single frame into one scroll operation.
+   * Smart auto-scroll with double-check:
+   * 1. Check isNearBottom BEFORE scheduling
+   * 2. Schedule a rAF to perform the scroll after the browser layout
+   * 3. On the rAF tick, check isNearBottom AGAIN (handles edge case
+   *    where the user scrolled away between check and rAF)
+   * 4. After scroll, schedule ONE MORE rAF to re-check — catches
+   *    cascading height changes (tool output + expansion in same frame)
    */
   function anchorScroll() {
-    if (_scrollRaf) return // already scheduled this frame
+    if (!isNearBottom()) return
+    if (_scrollRaf) return
+
     _scrollRaf = requestAnimationFrame(() => {
       _scrollRaf = null
+      // First pass: scroll if still anchored
       if (isNearBottom()) {
         scrollToBottom()
+        // Second pass: catch cascading height changes (e.g. tool output
+        // plus tool expansion in the same content update)
+        _scrollRaf = requestAnimationFrame(() => {
+          _scrollRaf = null
+          if (isNearBottom()) {
+            scrollToBottom()
+          }
+        })
       }
     })
   }

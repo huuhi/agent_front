@@ -173,7 +173,7 @@ async function copyMessage(id: string, content: string) {
     <!-- Assistant Message -->
     <div v-else class="flex gap-3 max-w-[85%]">
       <div class="space-y-3 min-w-0">
-        <!-- Thinking Block — collapsible, properly contained -->
+        <!-- Thinking Block — collapsible with max-height + left accent border -->
         <div v-if="msg.thinking" class="mb-1 w-full overflow-hidden">
           <button @click="emit('toggleThinking', msg.id)" class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition-colors w-full text-left">
             <svg v-if="msg.thinking.completed" class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
@@ -183,9 +183,11 @@ async function copyMessage(id: string, content: string) {
             <span v-if="msg.thinking.durationMs" class="text-stone-500">{{ formatDuration(msg.thinking.durationMs) }}</span>
             <svg class="w-3 h-3 text-stone-300 ml-auto shrink-0 transition-transform duration-200" :class="expandedThinking.has(msg.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <div v-show="expandedThinking.has(msg.id)" class="mt-2 w-full">
-            <div class="text-xs text-stone-500 italic leading-relaxed bg-stone-50 rounded-lg p-3 border border-stone-100 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">{{ msg.thinking.content }}</div>
-          </div>
+          <Transition name="thinking">
+            <div v-if="expandedThinking.has(msg.id)" class="mt-2 w-full overflow-hidden">
+              <div class="thinking-content text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap break-words">{{ msg.thinking.content }}</div>
+            </div>
+          </Transition>
         </div>
         <div v-else-if="isAiResponding && isLastMessage" class="flex items-center gap-2 text-xs text-stone-400">
           <div class="w-3 h-3 rounded-full border-2 border-violet-200 border-t-violet-500 animate-spin"></div><span>正在思考...</span>
@@ -322,9 +324,43 @@ async function copyMessage(id: string, content: string) {
 </template>
 
 <style scoped>
+/* ── Thinking block: expand/collapse with max-height transition ── */
+.thinking-enter-active {
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.2s ease;
+  overflow: hidden;
+}
+.thinking-leave-active {
+  transition: max-height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.15s ease;
+  overflow: hidden;
+}
+.thinking-enter-from,
+.thinking-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.thinking-enter-to,
+.thinking-leave-from {
+  max-height: 5000px;
+  opacity: 1;
+}
+
+/* Thinking content container — limited height, scrollable, left accent */
+.thinking-content {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #FAFAFE;
+  border: 1px solid #E6E5F5;
+  border-left: 3px solid #C7C7D1;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  color: #7E84A3;
+}
+
 /* ── Tool output: graceful slide-in for result content ── */
 .tool-output-enter-active {
-  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               opacity 0.25s ease;
   overflow: hidden;
 }
@@ -344,7 +380,7 @@ async function copyMessage(id: string, content: string) {
   overflow: hidden;
 }
 .tool-expand-leave-active {
-  transition: max-height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+  transition: max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               opacity 0.15s ease;
   overflow: hidden;
 }
