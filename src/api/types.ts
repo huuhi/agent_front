@@ -138,6 +138,14 @@ export interface KnowledgeFileDTO {
   model?: string
 }
 
+// ========== User Memory ==========
+export interface UserMemoryVO {
+  id: string | number
+  content: string
+  source: string | null
+  createAt: string
+}
+
 // ========== Knowledge creation DTO ==========
 export interface KnowledgeCreateDTO {
   name: string

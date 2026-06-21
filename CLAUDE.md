@@ -14,7 +14,7 @@ Dependencies are managed via `npm install`. No test framework is currently confi
 
 ## Architecture Overview
 
-**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://106.52.234.62:8989`). Multi-page SPA using `vue-router`.
+**NexusAgent** — a Vue 3 + TypeScript + Tailwind CSS 4 chat frontend for an AI Agent platform (Java backend at `http://localhost:8080`). Multi-page SPA using `vue-router`.
 
 ### Entry Flow
 
@@ -38,13 +38,14 @@ index.html → src/main.ts (installs router) → src/App.vue (<router-view />)
 |---|---|
 | `AppLayout.vue` | Persistent shell: sidebar + router-view + global overlays. Owns sidebar state, session list, MCP drawer, API config modal. |
 | `NexusAgent.vue` | `/chat/:sessionId?` — Chat orchestrator: wires composables together, owns chat state (selected model, MCPs, RAG, thinking toggle, tool chain state), configures `marked` markdown renderer, lifecycle init. |
-| `KnowledgeBasePage.vue` | `/knowledge` — Dual-tab page: **Files** tab (search, filter by bizType, upload, file grid with preview modal) and **Knowledge Bases** tab (sidebar list of KBs, detail view with file management, create KB modal, add-files-to-KB modal). |
+| `KnowledgeBasePage.vue` | `/knowledge` — Dual-tab page: **Files** tab (search, filter by bizType, upload, file grid with preview modal) and **Knowledge Bases** tab (sidebar list of KBs, detail view with file management, create KB modal, add-files-to-KB modal, vector model selector). |
+| `FilePreviewModal.vue` | Standalone file preview modal — PDF (Blob→iframe), docx (docx-preview), xlsx (SheetJS), md (markdown-it), txt (pre), html (iframe srcdoc), images. All rendering is local. |
 | `Sidebar.vue` | Persistent nav: session list, new-chat button, user avatar, MCP/API config entry points. |
 | `MessageBubble.vue` | Renders user or assistant messages with markdown, collapsible thinking blocks, three-state tool chain chains, file attachments (truncated to 3 with "+N more"), image lightbox, copy-to-clipboard. |
-| `ChatInput.vue` | Auto-resizing textarea (max 35vh), file attach (with inline preview and paste), depth-thinking toggle, options panel with sub-dropdowns for API config/model/knowledge base/MCP selection (smart positioning), RAG toggle, send/stop buttons. |
+| `ChatInput.vue` | Auto-resizing textarea (max 35vh), file attach (with inline preview and paste), depth-thinking toggle, options panel with sub-dropdowns for API config/model/knowledge base/MCP selection (smart positioning), RAG toggle, send/stop buttons. Only CHAT-type models shown in model selector. |
+| `APIConfigModal.vue` | Modal for managing custom API endpoints (name, base URL, API key, model list with Chat/向量 segmented control). Uses `ModelItem` type for model entries. |
 | `MCPDrawer.vue` | Full multi-view drawer: list (CRUD), add/edit form, detail view, service-provider import (ModelScope), MCP API Key management. |
-| `APIConfigModal.vue` | Modal for managing custom API endpoints (name, base URL, API key, model list). |
-| `CustomSelect.vue` | Reusable dropdown select component used in KnowledgeBasePage. `v-model` + options array, click-outside-to-close, transition animation. |
+| `CustomSelect.vue` | Reusable dropdown select component. `v-model` + options array, click-outside-to-close, transition animation, optional `right` prop for right-aligned dropdown. |
 | `ToastContainer.vue` | Renders toast notifications with auto-dismiss after 3s. Consumed by `useToast`. |
 
 ### Composables (state modules)
@@ -57,21 +58,27 @@ Shared state lives in module-level singletons (`useAppState`, `useSessions`). Ch
 | `useAppState` | Singleton | Sidebar collapse state, MCP drawer / API config modal visibility, user API configs. `refreshUserApiConfigs()` helper. |
 | `useChat` | Scoped | Message sending/receiving, SSE streaming, file upload (immediate on selection), typewriter animation (rAF with adaptive step, DOM updates every 4th frame), cancellation via AbortController. Receives refs from `useSessions` and `useAutoScroll`. |
 | `useAutoScroll` | Scoped | Scroll-to-bottom on new content (auto-scroll only when near bottom < 40px). "Jump to bottom" button when scrolled up > 200px. |
-| `useTitleWebSocket` | Scoped | WebSocket client for live session title updates (`ws://106.52.234.62:8989/ws/1`). Auto-reconnect with 3s delay. |
+| `useTitleWebSocket` | Scoped | WebSocket client for live session title updates (`ws://localhost:8080/ws/1`). Auto-reconnect with 3s delay. |
 | `useToast` | Scoped | Global toast notification. `show(message, type)` pushes to `toasts` ref with 3s auto-dismiss. |
 
 ### API Layer (`src/api/`)
 
-- **`types.ts`** — Backend response shapes: `ApiResult<T>` (unified envelope with `code`/`msg`/`data`/`total`), `SessionVO`, `MessageVO`, `AttachedFileVO`, `KnowledgeVO`, `KnowledgeDetailVO` (extends KnowledgeVO with `knowledgeBaseFileList[]`), `KnowledgeBaseFileItem`, `MCPServerVO`, `UserApiConfigVO`, `ChatDTO`, `ChatUserMessageDTO`, `McpServerItemDTO`, `KnowledgeFileDTO`, `KnowledgeCreateDTO`.
+- **`types.ts`** — Backend response shapes: `ApiResult<T>` (unified envelope with `code`/`msg`/`data`/`total`), `SessionVO`, `MessageVO`, `AttachedFileVO`, `KnowledgeVO`, `KnowledgeDetailVO` (extends KnowledgeVO with `knowledgeBaseFileList[]`), `KnowledgeBaseFileItem`, `MCPServerVO`, `UserApiConfigVO`, `ChatDTO`, `ChatUserMessageDTO`, `McpServerItemDTO`, `KnowledgeFileDTO`, `KnowledgeCreateDTO`, `ModelItem` (`{name, type: 'CHAT'|'EMBEDDING'}`).
+  - **`UserApiConfigVO.model`** is `ModelItem[]` (parsed from JSON strings by `fetchUserApiConfigs()`).
   - **`UserApiConfigVO` note**: `apikey` is lowercase in GET responses but POST save requires `APIKey` uppercase AK — handled by the `saveUserApiConfig()` function.
-- **`index.ts`** — REST client wrapping `fetch()` with Bearer token auth. Core `request<T>()` helper auto-detects JSON array responses vs `ApiResult<T>` envelope. Endpoints:
-  - Sessions: `fetchSessionList`, `fetchMessages`, `deleteSession`
-  - Knowledge: `fetchKnowledgeList`, `fetchKnowledgeDetail`, `createKnowledge`, `uploadKnowledgeFile` (associate files), `uploadKnowledgeFileBinary` (upload file with bizType=KNOWLEDGE)
-  - MCP: `fetchMCPServerList`, `addMCPServer` (POST array), `batchAddMCPServer`, `updateMCPServer`, `deleteMCPServer`, `fetchMCPServerDetail`, `fetchMCPServerFromService`
-  - MCP Config: `fetchMCPConfig` (GET, masked), `saveMCPConfig` (POST with query param)
-  - Models: `fetchModelList` (GET with query params baseUrl+token)
-  - User API Configs: `fetchUserApiConfigs`, `saveUserApiConfig`
-  - Files: `fetchUserFiles` (GET with fileName/bizType params), `uploadFile` (POST multipart, `bizType=CHAT`, `files` key), `uploadImage` (POST multipart, `file` key)
+  - **`KnowledgeFileDTO`** includes `configId?: string` and `model?: string` for embedding model association.
+- **`index.ts`** — REST client wrapping `fetch()`. Key helpers:
+  - `buildHeaders()`: Central header builder — injects `token` header (not `Authorization: Bearer`) into every request, skips for auth paths (login/register).
+  - `safeParse<T>()`: JSON.parse wrapper with regex to quote 16+ digit numbers, preventing JavaScript Number precision loss from bigint backend IDs.
+  - `request<T>()`: Core API caller with 401/NOT_LOGIN interceptor — auto-clears localStorage token and redirects to `/auth` on session expiry. Auth paths are exempt from interception.
+  - Endpoints:
+    - Sessions: `fetchSessionList`, `fetchMessages`, `deleteSession`
+    - Knowledge: `fetchKnowledgeList`, `fetchKnowledgeDetail`, `createKnowledge`, `uploadKnowledgeFile` (associate files with configId+model), `uploadKnowledgeFileBinary` (upload file with bizType=KNOWLEDGE)
+    - MCP: `fetchMCPServerList`, `addMCPServer` (POST array), `batchAddMCPServer`, `updateMCPServer`, `deleteMCPServer`, `fetchMCPServerDetail`, `fetchMCPServerFromService`
+    - MCP Config: `fetchMCPConfig` (GET, masked), `saveMCPConfig` (POST with query param)
+    - Models: `fetchModelList` (GET with query params baseUrl+token)
+    - User API Configs: `fetchUserApiConfigs` (parses model JSON strings → `ModelItem[]`), `saveUserApiConfig`
+    - Files: `fetchUserFiles` (GET with fileName/bizType params), `uploadFile` (POST multipart, `bizType=CHAT`, `files` key), `uploadImage` (POST multipart, `file` key)
 - **`chat-stream.ts`** — SSE streaming chat client. Core functions:
   - `createSSEParser()`: Low-level line-based SSE parser with buffer/flush.
   - `dispatchEvent()`: Dual-mode dispatch — (1) tries JSON `data.type` discriminator (THINK, CONTENT, TOOL_EXECUTION, TOOL_EXECUTION_RESULT, session_id), then (2) falls back to event-name dispatch.
@@ -99,6 +106,11 @@ Component-level types distinct from API types. Key types: `ComponentMessage`, `C
 - **Router-aware session resolution** (in `NexusAgent.vue` `onMounted`): Priority is route param (`:sessionId`) > localStorage cached ID > new local session.
 - **NexusAgent.vue lifecycle** (`onMounted`): Configures `marked`, calls `setupCodeCopy()`, connects WebSocket. Waits for `useSessions().initPromise`, then fetches API configs, restores selections from localStorage, resolves session from route params, loads messages.
 - **Custom API config routing**: When `ModelOption.configId` is set, backend routes through that config's base URL and API key; otherwise system default.
+- **Session reuse**: `createNewSession()` reuses an existing `local-` session in the list instead of creating a new one, preventing sidebar bloat.
+- **`buildHeaders()` central interceptor** (in `src/api/index.ts`): All HTTP calls go through `buildHeaders()` which injects the `token` header. Auth paths skip the token to avoid stale-token 401s on login/register.
+- **401/NOT_LOGIN interceptor** (in `request()`): On HTTP 401 or `{code:1, msg:"NOT_LOGIN"}` response, clears all localStorage keys and redirects to `/auth`. Only triggers for non-auth paths.
+- **Bigint overflow protection** (`safeParse()`): Backend IDs (~2e18) exceed `Number.MAX_SAFE_INTEGER`. A regex quotes 16+ digit numbers before `JSON.parse`. Applied in `request()` and all three direct upload functions.
+- **Embedding model selection** (KnowledgeBasePage): Filters `type === 'EMBEDDING'` from all API configs, caches selection in `localStorage` as `default_embedding_model`, and includes `configId`+`model` in the file-association payload.
 - Exposes `window.__setToken('jwt')` for dev console auth.
 
 ### SSE Event Flow (chat-stream.ts)
@@ -142,19 +154,24 @@ Minimal `vite.config.ts` — only two plugins: `@vitejs/plugin-vue` and `@tailwi
 - Tailwind CSS v4, `@tailwindcss/vite` plugin
 - `vue-router` ^4.6.4 — **active** with `createWebHistory`
 - `marked` (markdown parsing), `highlight.js` (syntax highlighting, github.css style)
+- `docx-preview` (Word docx preview), `xlsx` / SheetJS (Excel preview), `markdown-it` (Markdown rendering in preview modal)
+- `@types/markdown-it` (dev)
 - Dev: `@types/node`, `@vitejs/plugin-vue`, `@vue/tsconfig`
 - No state management library, no test framework
 - Recommended VSCode extension: `Vue.volar`
 
 ### Backend API Notes
 
-- Base URL: `http://106.52.234.62:8989`
-- Auth: Bearer token stored in `localStorage.getItem('token')`, settable via `window.__setToken('jwt')` in dev console.
+- Base URL: `http://localhost:8080`
+- Auth: `token` header (not standard `Authorization: Bearer`). Token stored in `localStorage.getItem('token')`, settable via `window.__setToken('jwt')` in dev console.
 - Chat endpoint: `POST /chat/stream` returns SSE.
-- WebSocket: `ws://106.52.234.62:8989/ws/1` pushes `{ type: "title", data: "..." }` events.
+- WebSocket: `ws://localhost:8080/ws/1` pushes `{ type: "title", data: "..." }` events.
 - File upload: documents to `POST /file?bizType=CHAT` (multipart, `files` key), images to `POST /file/image` (multipart, `file` key), knowledge files to `POST /file?bizType=KNOWLEDGE`.
 - Unified response envelope `ApiResult<T>`: `{ code: 0, msg: "ok", data: T, total: number | null }`. Some endpoints return raw JSON arrays (e.g., `/history/{sessionId}`) — the `request()` helper detects this by checking if text starts with `[`.
 - File listing: `GET /file?fileName=&bizType=KNOWLEDGE` — backend requires `fileName` param (pass empty string for all).
+- Error handling: HTTP 401 or `{"code":1,"msg":"NOT_LOGIN"}` on non-auth endpoints triggers automatic token wipe + redirect to `/auth`.
+- `UserApiConfigVO.model` returns JSON-stringified `ModelItem` objects (e.g. `["{\\"name\\":\\"...\\",\\"type\\":\\"CHAT\\"}"]`). `fetchUserApiConfigs()` parses them into proper `ModelItem[]`.
+- Knowledge file association: `POST /knowledge/file` accepts `{fileIds, knowledgeId, configId, model}` where `configId` and `model` reference the selected embedding model.
 
 ### Configuration
 

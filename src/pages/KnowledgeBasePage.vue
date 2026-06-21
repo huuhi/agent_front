@@ -68,16 +68,17 @@ function getFileIcon(ext: string): string {
 
 function getIconBg(ext: string): string {
   const type = getFileIcon(ext)
+  // Morandi / muted palette — low saturation, harmonious with system purple (#606CF3)
   const bgMap: Record<string, string> = {
-    markdown: 'bg-sky-50 text-sky-500',
-    text: 'bg-stone-50 text-stone-400',
-    html: 'bg-orange-50 text-orange-500',
-    code: 'bg-violet-50 text-violet-500',
-    document: 'bg-rose-50 text-rose-500',
-    image: 'bg-pink-50 text-pink-500',
-    file: 'bg-lavender-50 text-lavender-500',
+    markdown: 'bg-[#F3F1FC] text-[#606CF3]',
+    text: 'bg-[#F2F2F5] text-[#8A8A9E]',
+    html: 'bg-[#F3F1FC] text-[#606CF3]',
+    code: 'bg-[#F3F1FC] text-[#606CF3]',
+    document: 'bg-[#FAF0F4] text-[#B5849E]',
+    image: 'bg-[#F0F4FA] text-[#7C9ABF]',
+    file: 'bg-[#F2F2F5] text-[#8A8A9E]',
   }
-  return bgMap[type] || 'bg-stone-50 text-stone-400'
+  return bgMap[type] || 'bg-[#F2F2F5] text-[#8A8A9E]'
 }
 
 function openPreview(file: AttachedFileVO) {
@@ -310,7 +311,7 @@ onMounted(() => {
     </template>
     <template v-else-if="error && allFiles.length === 0">
       <div class="flex-1 flex items-center justify-center px-4">
-        <div class="px-5 py-3 rounded-2xl bg-red-50 border border-red-100 text-sm text-red-500 font-medium">{{ error }}</div>
+        <div class="px-5 py-3 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-sm text-[#C47B7B] font-medium">{{ error }}</div>
       </div>
     </template>
 
@@ -362,7 +363,7 @@ onMounted(() => {
           <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <div v-for="file in filteredFiles" :key="file.id"
               @click="openPreview(file)"
-              class="flex flex-col gap-3 px-4 py-4 rounded-2xl bg-white border border-[#E6E5F5] cursor-pointer transition-all duration-200 hover:border-[#D0D0E8] hover:shadow-[0_4px_20px_rgba(96,108,243,0.08)] hover:scale-[1.02] active:scale-[0.98] group"
+              class="flex flex-col gap-3 px-4 py-4 rounded-2xl bg-white border border-[#E6E5F5] cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D0D0E8] hover:shadow-[0_8px_24px_rgba(96,108,243,0.07)] active:scale-[0.98] group"
             >
               <!-- Icon + Name -->
               <div class="flex items-start gap-3.5">
@@ -422,26 +423,26 @@ onMounted(() => {
               <!-- Badges -->
               <div class="flex items-center gap-2 flex-wrap">
                 <span v-if="file.uploadStatus === 'SUCCESS'"
-                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600"
+                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#ECFDF5] text-[#6DB89A]"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#6DB89A]"></span>
                   已完成
                 </span>
                 <span v-else-if="file.uploadStatus === 'PROCESSING'"
-                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-600"
+                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#FFFBEB] text-[#C49B5E]"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#C49B5E] animate-pulse"></span>
                   处理中
                 </span>
                 <span v-else-if="file.uploadStatus === 'FAILED'"
-                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-500"
+                  class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#FEF2F2] text-[#C47B7B]"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#C47B7B]"></span>
                   失败
                 </span>
                 <span v-if="file.bizType"
                   class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
-                  :class="file.bizType === 'KNOWLEDGE' ? 'bg-violet-50 text-violet-600' : 'bg-sky-50 text-sky-600'"
+                  :class="file.bizType === 'KNOWLEDGE' ? 'bg-[#F3F1FC] text-[#606CF3]' : 'bg-[#F0F4FA] text-[#7C9ABF]'"
                 >{{ file.bizType === 'KNOWLEDGE' ? '知识库' : '聊天' }}</span>
               </div>
             </div>
@@ -495,8 +496,8 @@ onMounted(() => {
                     <h3 class="text-[14px] font-bold text-[#2D325A] truncate">{{ selectedKb.name }}</h3>
                     <p v-if="selectedKb.describe" class="text-[12px] text-[#7E84A3] mt-0.5 truncate">{{ selectedKb.describe }}</p>
                   </div>
-                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold" :class="selectedKb.isPublic ? 'bg-emerald-50 text-emerald-600' : 'bg-[#F5F4FD] text-[#7E84A3]'">
-                    <span class="w-1.5 h-1.5 rounded-full" :class="selectedKb.isPublic ? 'bg-emerald-500' : 'bg-[#C7C7D1]'"></span>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold" :class="selectedKb.isPublic ? 'bg-[#ECFDF5] text-[#6DB89A]' : 'bg-[#F5F4FD] text-[#7E84A3]'">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="selectedKb.isPublic ? 'bg-[#6DB89A]' : 'bg-[#C7C7D1]'"></span>
                     {{ selectedKb.isPublic ? '公开' : '私有' }}
                   </span>
                 </div>
@@ -525,9 +526,9 @@ onMounted(() => {
                 <div class="text-[12px] font-semibold text-[#7E84A3] mb-3">{{ selectedKb.knowledgeBaseFileList?.length || 0 }} 个文件</div>
                 <div v-for="(f, idx) in selectedKb.knowledgeBaseFileList" :key="f.id + '-' + idx"
                   @click="openPreview(f)"
-                  class="flex items-start gap-3.5 px-4 py-3.5 rounded-2xl bg-white border border-[#E6E5F5] cursor-pointer transition-all duration-200 hover:border-[#D0D0E8] hover:shadow-[0_4px_16px_rgba(96,108,243,0.06)] hover:scale-[1.01] active:scale-[0.99] last:mb-0"
+                  class="flex items-start gap-3.5 px-4 py-3.5 rounded-2xl bg-white border border-[#E6E5F5] cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D0D0E8] hover:shadow-[0_8px_24px_rgba(96,108,243,0.07)] active:scale-[0.98] last:mb-0"
                 >
-                  <div class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-base" :class="getIconBg(f.extension)">
+                  <div class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm" :class="getIconBg(f.extension)">
                     <svg v-if="getFileIcon(f.extension) === 'markdown'" class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M4 7v10l4-4 4 4V7"/><path d="M16 7v10l4-4 4 4V7"/>
                     </svg>
@@ -550,14 +551,14 @@ onMounted(() => {
                     </div>
                     <div class="flex items-center gap-2 mt-1.5">
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                        :class="f.uploadStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-600' : f.uploadStatus === 'PROCESSING' ? 'bg-amber-50 text-amber-600' : f.uploadStatus === 'FAILED' ? 'bg-red-50 text-red-500' : 'bg-stone-50 text-stone-400'"
+                        :class="f.uploadStatus === 'SUCCESS' ? 'bg-[#ECFDF5] text-[#6DB89A]' : f.uploadStatus === 'PROCESSING' ? 'bg-[#FFFBEB] text-[#C49B5E]' : f.uploadStatus === 'FAILED' ? 'bg-[#FEF2F2] text-[#C47B7B]' : 'bg-[#F2F2F5] text-[#8A8A9E]'"
                       >
                         <span class="w-1.5 h-1.5 rounded-full"
-                          :class="f.uploadStatus === 'SUCCESS' ? 'bg-emerald-500' : f.uploadStatus === 'PROCESSING' ? 'bg-amber-500 animate-pulse' : f.uploadStatus === 'FAILED' ? 'bg-red-500' : 'bg-stone-300'"
+                          :class="f.uploadStatus === 'SUCCESS' ? 'bg-[#6DB89A]' : f.uploadStatus === 'PROCESSING' ? 'bg-[#C49B5E] animate-pulse' : f.uploadStatus === 'FAILED' ? 'bg-[#C47B7B]' : 'bg-[#C7C7D1]'"
                         ></span>
                         {{ { SUCCESS: '完成', PROCESSING: '处理中', FAILED: '失败' }[f.uploadStatus] || f.uploadStatus }}
                       </span>
-                      <span v-if="f.failReason" class="text-[11px] text-red-400 font-medium">{{ f.failReason }}</span>
+                      <span v-if="f.failReason" class="text-[11px] text-[#C47B7B] font-medium">{{ f.failReason }}</span>
                     </div>
                   </div>
                 </div>
@@ -631,6 +632,10 @@ onMounted(() => {
                 </div>
                 <div class="w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-sm" :class="getIconBg(file.extension)">
                   <svg v-if="getFileIcon(file.extension) === 'markdown'" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7v10l4-4 4 4V7"/><path d="M16 7v10l4-4 4 4V7"/></svg>
+                  <svg v-else-if="getFileIcon(file.extension) === 'image'" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                  <svg v-else-if="getFileIcon(file.extension) === 'html'" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                  <svg v-else-if="getFileIcon(file.extension) === 'code'" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                  <svg v-else-if="getFileIcon(file.extension) === 'document'" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                   <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
                 </div>
                 <div class="flex-1 min-w-0">

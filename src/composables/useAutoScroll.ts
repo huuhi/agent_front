@@ -1,12 +1,14 @@
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+
+const SCROLL_THRESHOLD = 100 // px from bottom — within this range = "at bottom"
 
 export function useAutoScroll() {
   const messageContainerRef = ref<HTMLElement | null>(null)
-  /** Whether the user has scrolled up enough to show the "back to bottom" button */
   const showScrollButton = ref(false)
 
+  // ── Scroll helpers ─────────────────────────────────────────────────
+
   function scrollToBottom() {
-    // Need nextTick to wait for Vue to render new content into the DOM
     nextTick(() => {
       const el = messageContainerRef.value
       if (el) {
@@ -16,7 +18,7 @@ export function useAutoScroll() {
     showScrollButton.value = false
   }
 
-  /** Call on scroll events to track user position */
+  /** Call on scroll events to track user position and show/hide the "back to bottom" button */
   function handleScroll() {
     const el = messageContainerRef.value
     if (!el) return
@@ -24,27 +26,62 @@ export function useAutoScroll() {
     showScrollButton.value = distFromBottom > 200
   }
 
-  /**
-   * Must be called BEFORE the DOM is updated with new content.
-   * Captures whether the user is at the bottom NOW, then scrolls
-   * after Vue renders if they were.
-   */
-  function autoScrollIfNeeded() {
+  /** Check if the user is currently near the bottom of the scroll container */
+  function isNearBottom(threshold = SCROLL_THRESHOLD): boolean {
     const el = messageContainerRef.value
-    if (!el) return
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+  }
 
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    const wasNearBottom = distFromBottom < 40
+  // ── Smart anchor scroll (rAF-batched) ──────────────────────────────
 
-    // Sync button visibility on every content flush (backup for scroll event)
-    showScrollButton.value = distFromBottom > 200
+  let _scrollRaf: number | null = null
 
-    nextTick(() => {
-      if (wasNearBottom) {
+  /**
+   * Smart auto-scroll: called AFTER content has been committed to the DOM.
+   * - Uses requestAnimationFrame to wait for the browser's layout/paint cycle.
+   * - Only scrolls if the user is near the bottom (within SCROLL_THRESHOLD).
+   * - Batches multiple calls within a single frame into one scroll operation.
+   */
+  function anchorScroll() {
+    if (_scrollRaf) return // already scheduled this frame
+    _scrollRaf = requestAnimationFrame(() => {
+      _scrollRaf = null
+      if (isNearBottom()) {
         scrollToBottom()
       }
     })
   }
 
-  return { messageContainerRef, showScrollButton, scrollToBottom, autoScrollIfNeeded, handleScroll }
+  // ── ResizeObserver: catch ALL DOM height changes ───────────────────
+
+  let _resizeObserver: ResizeObserver | null = null
+
+  onMounted(() => {
+    const el = messageContainerRef.value
+    if (!el) return
+    _resizeObserver = new ResizeObserver(() => {
+      // Any time the container's content size changes (tool expansion,
+      // image load, view switching, etc.), re-anchor if user is near bottom.
+      anchorScroll()
+    })
+    _resizeObserver.observe(el)
+  })
+
+  onUnmounted(() => {
+    _resizeObserver?.disconnect()
+    _resizeObserver = null
+    if (_scrollRaf) {
+      cancelAnimationFrame(_scrollRaf)
+      _scrollRaf = null
+    }
+  })
+
+  return {
+    messageContainerRef,
+    showScrollButton,
+    scrollToBottom,
+    anchorScroll,
+    handleScroll,
+  }
 }

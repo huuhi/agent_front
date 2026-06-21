@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { fetchSessionList, fetchMessages, fetchMCPServerList, deleteSession as apiDeleteSession } from '../api'
 import { groupMessages } from '../utils/markdown'
 import type { SessionVO, KnowledgeVO, MCPServerVO } from '../api/types'
@@ -15,35 +15,97 @@ const loading = ref(true)
 const errorMsg = ref('')
 const showSessionDeleteConfirm = ref<string | null>(null)
 
+let _readyPromise: Promise<void> = Promise.resolve()
+let _loadInProgress: Promise<void> | null = null
+
 const currentSession = computed(() => sessionList.value.find(s => s.id === currentSessionId.value) ?? null)
 
-/** Initialize session list & MCP list at module load — shared by all routes */
-async function initSessions() {
-  // Don't fetch for unauthenticated users — route guard handles the redirect
+/** Reset all session state — call on logout to clear old user's data */
+function resetSessions() {
+  sessionList.value = []
+  currentSessionId.value = ''
+  messageList.value = []
+  knowledgeBases.value = []
+  mockMCPList.value = []
+  loading.value = true
+  errorMsg.value = ''
+  showSessionDeleteConfirm.value = null
+  _readyPromise = Promise.resolve()
+  _loadInProgress = null
+}
+
+/** Fetch fresh session list & MCP list from the server (always fetches, no early-return) */
+async function reloadSessions() {
+  // Dedup: if a reload is already in flight, reuse it
+  if (_loadInProgress) return _loadInProgress
+
   if (!localStorage.getItem('token')) {
+    resetSessions()
     loading.value = false
+    _readyPromise = Promise.resolve()
     return
   }
-  try {
-    const [sessions, mcpList] = await Promise.all([
-      fetchSessionList(),
-      fetchMCPServerList().catch(() => [] as MCPServerVO[]),
-    ])
-    sessionList.value = sessions.map(vo => ({
-      id: vo.sessionId,
-      title: vo.title,
-      createdAt: vo.createTime,
-    }))
-    mockMCPList.value = mcpList
-  } catch {
-    errorMsg.value = '加载失败'
-  } finally {
-    loading.value = false
+
+  // Clear old data before fetch
+  sessionList.value = []
+  loading.value = true
+
+  _loadInProgress = _readyPromise = (async () => {
+    try {
+      const [sessions, mcpList] = await Promise.all([
+        fetchSessionList(),
+        fetchMCPServerList().catch(() => [] as MCPServerVO[]),
+      ])
+      sessionList.value = sessions.map(vo => ({
+        id: vo.sessionId,
+        title: vo.title,
+        createdAt: vo.createTime,
+      }))
+      mockMCPList.value = mcpList
+    } catch {
+      errorMsg.value = '加载失败'
+    } finally {
+      loading.value = false
+    }
+  })()
+
+  await _readyPromise
+  _loadInProgress = null
+}
+
+/**
+ * Wait for the session list to be populated.
+ * Handles the race where child onMounted fires before parent onMounted
+ * (Vue 3 lifecycle), so AppLayout's reloadSessions may not have started yet.
+ */
+async function waitForReady(): Promise<void> {
+  // Fast path: already loaded
+  if (sessionList.value.length > 0) return
+  // No token: nothing to load
+  if (!localStorage.getItem('token')) return
+
+  // Wait for the current/next load promise
+  await _readyPromise
+
+  // Still empty? AppLayout's onMounted (parent) hasn't fired yet.
+  // Wait reactively for sessionList to become populated.
+  if (sessionList.value.length === 0 && localStorage.getItem('token')) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(
+        [sessionList, loading],
+        () => {
+          if (sessionList.value.length > 0 || !loading.value) {
+            stop()
+            resolve()
+          }
+        },
+      )
+    })
   }
 }
 
-// Kick off immediately when module first imported (singleton)
-const initPromise = initSessions()
+// Auto-init on first module import — ensures fetch starts before any onMounted
+const _initPromise = reloadSessions()
 
 export function useSessions() {
   function mapSession(vo: SessionVO): ComponentSession {
@@ -111,29 +173,6 @@ export function useSessions() {
     }
   }
 
-  /** Re-run init if the initial load was skipped (e.g. user wasn't logged in) */
-  async function reloadSessions() {
-    // If already loaded (sessions exist), skip
-    if (sessionList.value.length > 0 || !localStorage.getItem('token')) return
-    loading.value = true
-    try {
-      const [sessions, mcpList] = await Promise.all([
-        fetchSessionList(),
-        fetchMCPServerList().catch(() => [] as MCPServerVO[]),
-      ])
-      sessionList.value = sessions.map(vo => ({
-        id: vo.sessionId,
-        title: vo.title,
-        createdAt: vo.createTime,
-      }))
-      mockMCPList.value = mcpList
-    } catch {
-      errorMsg.value = '加载失败'
-    } finally {
-      loading.value = false
-    }
-  }
-
   async function refreshSessionList() {
     try {
       const sessions = await fetchSessionList()
@@ -153,8 +192,9 @@ export function useSessions() {
     errorMsg,
     showSessionDeleteConfirm,
     currentSession,
-    initPromise,
     reloadSessions,
+    waitForReady,
+    resetSessions,
     loadMessages,
     selectSession,
     createNewSession,

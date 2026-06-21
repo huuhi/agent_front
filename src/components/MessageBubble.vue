@@ -7,10 +7,11 @@ import {
   formatTime,
   formatDuration,
   formatFileSize,
-  getFileTypeColor,
   isSingleImage,
 } from '../utils/helpers'
-import type { ComponentMessage } from '../types/chat'
+import type { ComponentMessage, ComponentAttachment } from '../types/chat'
+import type { AttachedFileVO } from '../api/types'
+import FilePreviewModal from './FilePreviewModal.vue'
 
 defineProps<{
   msg: ComponentMessage
@@ -30,8 +31,36 @@ const emit = defineEmits<{
 }>()
 
 const lightboxUrl = ref('')
+const previewAttachment = ref<AttachedFileVO | null>(null)
 const copiedMsgId = ref<string | null>(null)
 const isHovered = ref(false)
+
+function openFilePreview(att: ComponentAttachment) {
+  previewAttachment.value = {
+    id: att.id,
+    fileName: att.name,
+    fileUrl: att.url,
+    fileSize: att.size,
+    extension: att.ext,
+    uploadStatus: 'SUCCESS',
+  } as AttachedFileVO
+}
+
+function closeFilePreview() {
+  previewAttachment.value = null
+}
+
+/** Map file extension to a display icon name */
+function getFileCardIcon(ext: string): string {
+  const e = ext.toLowerCase()
+  if (['md', 'txt', 'log'].includes(e)) return 'text'
+  if (['html', 'htm'].includes(e)) return 'html'
+  if (['js', 'ts', 'jsx', 'tsx', 'json', 'xml', 'yaml', 'yml', 'css',
+      'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'hpp', 'sh', 'bash', 'zsh'].includes(e)) return 'code'
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv'].includes(e)) return 'document'
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(e)) return 'image'
+  return 'file'
+}
 
 async function copyMessage(id: string, content: string) {
   try {
@@ -72,12 +101,43 @@ async function copyMessage(id: string, content: string) {
                 <span class="text-[10px] text-stone-400 shrink-0">{{ formatFileSize(att.size) }}</span>
               </div>
             </div>
-            <!-- Document / Code attachment -->
-            <div v-else class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg border shadow-sm text-[11px]" :class="getFileTypeColor(att.type)">
-              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-if="att.type === 'document'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" v-else><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-              <span class="font-medium truncate max-w-[80px]">{{ att.name }}</span>
-              <span class="text-stone-400 shrink-0">{{ formatFileSize(att.size) }}</span>
+            <!-- Document / Code / File attachment card -->
+            <div v-else
+              @click="openFilePreview(att)"
+              class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#F3F1FC]/50 border border-[#D0D0E8] shadow-sm cursor-pointer transition-all duration-200 hover:bg-[#E6E5F5]/70 hover:shadow-md active:scale-[0.98]"
+            >
+              <!-- File type icon -->
+              <div class="w-9 h-9 shrink-0 rounded-lg bg-white border border-[#E6E5F5] flex items-center justify-center">
+                <!-- Text (md/txt/log) -->
+                <svg v-if="getFileCardIcon(att.ext) === 'text'" class="w-4.5 h-4.5 text-[#606CF3]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                <!-- HTML -->
+                <svg v-else-if="getFileCardIcon(att.ext) === 'html'" class="w-4.5 h-4.5 text-[#606CF3]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <!-- Code -->
+                <svg v-else-if="getFileCardIcon(att.ext) === 'code'" class="w-4.5 h-4.5 text-[#606CF3]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <!-- Document (PDF/docx/xlsx) -->
+                <svg v-else-if="getFileCardIcon(att.ext) === 'document'" class="w-4.5 h-4.5 text-[#B5849E]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                <!-- Image -->
+                <svg v-else-if="getFileCardIcon(att.ext) === 'image'" class="w-4.5 h-4.5 text-[#7C9ABF]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="2"/><path d="M21 15l-5-5L5 21"/>
+                </svg>
+                <!-- Generic file -->
+                <svg v-else class="w-4.5 h-4.5 text-[#8A8A9E]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/>
+                </svg>
+              </div>
+              <!-- File info -->
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-semibold text-[#2D325A] truncate leading-snug">{{ att.name }}</div>
+                <div class="text-[11px] text-[#7E84A3] mt-0.5">{{ formatFileSize(att.size) }}</div>
+              </div>
             </div>
           </template>
         </template>
@@ -151,29 +211,33 @@ async function copyMessage(id: string, content: string) {
                     <span class="font-medium text-stone-700">{{ tc.name }}</span>
                     <svg class="w-3 h-3 ml-auto text-stone-300 transition-transform duration-200" :class="expandedSteps.has(tc.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                   </button>
-                  <div v-show="expandedSteps.has(tc.id)" class="mt-1.5 ml-4 pl-3 border-l-2 border-stone-100 space-y-1.5">
-                    <div v-if="frag.thinking" class="mb-2">
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">思考过程</div>
-                      <div class="text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap">{{ frag.thinking.content }}</div>
-                    </div>
-                    <div>
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
-                      <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
-                    </div>
-                    <div v-if="tc.output">
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输出</div>
-                      <div class="mt-0.5" :class="tc.status === 'error' ? 'bg-red-50 border border-red-100 rounded-lg p-2 text-[11px] text-red-700 leading-relaxed' : 'bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto max-w-full whitespace-pre-wrap break-all'">
-                        <template v-if="tc.status === 'error'">
-                          <div class="flex items-center gap-1 mb-0.5 font-medium">
-                            <svg class="w-3 h-3 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
-                            <span>失败</span>
-                          </div>
-                          <p>{{ friendlyError(tc.output) }}</p>
-                        </template>
-                        <template v-else>{{ tc.output }}</template>
+                  <Transition name="tool-expand">
+                    <div v-if="expandedSteps.has(tc.id)" class="tool-details-inner mt-1.5 ml-4 pl-3 border-l-2 border-stone-100 space-y-1.5">
+                      <div v-if="frag.thinking" class="mb-2">
+                        <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">思考过程</div>
+                        <div class="text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap">{{ frag.thinking.content }}</div>
                       </div>
+                      <div>
+                        <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
+                        <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
+                      </div>
+                      <Transition name="tool-output">
+                        <div v-if="tc.output" :key="'out-' + tc.id">
+                          <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输出</div>
+                          <div class="mt-0.5" :class="tc.status === 'error' ? 'bg-red-50 border border-red-100 rounded-lg p-2 text-[11px] text-red-700 leading-relaxed' : 'bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto max-w-full whitespace-pre-wrap break-all'">
+                            <template v-if="tc.status === 'error'">
+                              <div class="flex items-center gap-1 mb-0.5 font-medium">
+                                <svg class="w-3 h-3 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                                <span>失败</span>
+                              </div>
+                              <p>{{ friendlyError(tc.output) }}</p>
+                            </template>
+                            <template v-else>{{ tc.output }}</template>
+                          </div>
+                        </div>
+                      </Transition>
                     </div>
-                  </div>
+                  </Transition>
                 </div>
               </template>
 
@@ -190,31 +254,35 @@ async function copyMessage(id: string, content: string) {
                     <svg class="w-3 h-3 ml-auto text-stone-300 transition-transform duration-200" :class="!expandedSteps.has(tc.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                   </button>
                   <!-- In state 2: shown unless collapsed by user -->
-                  <div v-show="!expandedSteps.has(tc.id)" class="mt-1.5 ml-4 pl-3 border-l-2 border-stone-100 space-y-1.5">
-                    <div v-if="frag.thinking" class="mb-2">
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">思考过程</div>
-                      <div class="text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap">{{ frag.thinking.content }}</div>
-                    </div>
-                    <div>
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
-                      <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
-                    </div>
-                    <div v-if="tc.output">
-                      <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输出</div>
-                      <div :class="tc.status === 'error' ? 'bg-red-50 border border-red-100 rounded-lg p-2 text-[11px] text-red-700 leading-relaxed' : 'bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto max-w-full whitespace-pre-wrap break-all'">
-                        <template v-if="tc.status === 'error'">
-                          <div class="flex items-center gap-1 mb-0.5 font-medium">
-                            <svg class="w-3 h-3 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
-                            <span>失败</span>
-                          </div>
-                          <p>{{ friendlyError(tc.output) }}</p>
-                        </template>
-                        <template v-else>{{ tc.output }}</template>
+                  <Transition name="tool-expand">
+                    <div v-if="!expandedSteps.has(tc.id)" class="tool-details-inner mt-1.5 ml-4 pl-3 border-l-2 border-stone-100 space-y-1.5">
+                      <div v-if="frag.thinking" class="mb-2">
+                        <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">思考过程</div>
+                        <div class="text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap">{{ frag.thinking.content }}</div>
                       </div>
-                    </div>
+                      <div>
+                        <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
+                        <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
+                      </div>
+                      <Transition name="tool-output">
+                        <div v-if="tc.output" :key="'out-' + tc.id">
+                          <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输出</div>
+                          <div :class="tc.status === 'error' ? 'bg-red-50 border border-red-100 rounded-lg p-2 text-[11px] text-red-700 leading-relaxed' : 'bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto max-w-full whitespace-pre-wrap break-all'">
+                            <template v-if="tc.status === 'error'">
+                              <div class="flex items-center gap-1 mb-0.5 font-medium">
+                                <svg class="w-3 h-3 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                              <span>失败</span>
+                            </div>
+                            <p>{{ friendlyError(tc.output) }}</p>
+                          </template>
+                          <template v-else>{{ tc.output }}</template>
+                        </div>
+                      </div>
+                    </Transition>
                   </div>
-                </div>
-              </template>
+                </Transition>
+              </div>
+            </template>
             </div>
           </template>
         </template>
@@ -244,4 +312,50 @@ async function copyMessage(id: string, content: string) {
       </div>
     </div>
   </div>
+
+  <!-- File Preview Modal -->
+  <FilePreviewModal
+    :file="previewAttachment"
+    :visible="!!previewAttachment"
+    @close="closeFilePreview"
+  />
 </template>
+
+<style scoped>
+/* ── Tool output: graceful slide-in for result content ── */
+.tool-output-enter-active {
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.25s ease;
+  overflow: hidden;
+}
+.tool-output-enter-from {
+  max-height: 0;
+  opacity: 0;
+}
+.tool-output-enter-to {
+  max-height: 5000px;
+  opacity: 1;
+}
+
+/* ── Tool expand/collapse: smooth reveal for details panel ── */
+.tool-expand-enter-active {
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.2s ease;
+  overflow: hidden;
+}
+.tool-expand-leave-active {
+  transition: max-height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.15s ease;
+  overflow: hidden;
+}
+.tool-expand-enter-from,
+.tool-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.tool-expand-enter-to,
+.tool-expand-leave-from {
+  max-height: 5000px;
+  opacity: 1;
+}
+</style>

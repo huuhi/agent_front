@@ -39,7 +39,7 @@ const {
   messageContainerRef,
   showScrollButton,
   scrollToBottom,
-  autoScrollIfNeeded,
+  anchorScroll,
   handleScroll,
 } = useAutoScroll();
 
@@ -60,14 +60,18 @@ const {
   confirmDelete,
   refreshSessionList,
   mapSession,
+  waitForReady,
 } = useSessions();
 
 // State that useChat needs access to (to handle session updates)
-import { ref, nextTick } from "vue";
+import { ref, nextTick, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useAppState } from "./composables/useAppState";
 import type { UserApiConfigVO } from "./api/types";
 const route = useRoute();
+
+/** Guards against the "new chat" flash: only true after session + messages are fully resolved */
+const sessionReady = ref(false);
 const {
   showMCPDrawer,
   showAPIConfigModal,
@@ -118,7 +122,7 @@ const {
   enableThinking,
   refreshSessionList,
   scrollToBottom,
-  autoScrollIfNeeded,
+  anchorScroll,
   selectedMCPIds,
 );
 
@@ -236,8 +240,8 @@ onMounted(async () => {
   setupCodeCopy();
   connectTitleWs();
 
-  // Wait for session list from module-level singleton init
-  const sessions = await (await import('./composables/useSessions')).useSessions().initPromise;
+  // Wait for session list to be fully loaded (from AppLayout's reloadSessions)
+  await waitForReady();
 
   try {
     const apiConfigs = await fetchUserApiConfigs().catch(() => [] as UserApiConfigVO[]);
@@ -268,27 +272,45 @@ onMounted(async () => {
     const pathId = route.params.sessionId as string | undefined;
     const cachedId = localStorage.getItem("currentSessionId");
     const sessionVOs = sessionList.value;
-    const targetId = (
-      pathId && sessionVOs.some((s) => s.id === pathId)
-        ? pathId
-        : cachedId && sessionVOs.some((s) => s.id === cachedId)
-          ? cachedId
-          : null
-    );
-    if (targetId) {
-      currentSessionId.value = targetId;
-      messageList.value = await loadMessages(targetId);
+
+    // Priority: URL path param > localStorage > new chat
+    if (pathId && sessionVOs.some((s) => s.id === pathId)) {
+      // Session found in loaded list
+      currentSessionId.value = pathId;
+      messageList.value = await loadMessages(pathId);
+    } else if (pathId) {
+      // URL has a session ID but not in list yet (race). Try loading directly.
+      currentSessionId.value = pathId;
+      try {
+        messageList.value = await loadMessages(pathId);
+      } catch {
+        currentSessionId.value = `local-${Date.now()}`;
+      }
+    } else if (cachedId && sessionVOs.some((s) => s.id === cachedId)) {
+      currentSessionId.value = cachedId;
+      messageList.value = await loadMessages(cachedId);
     } else {
       currentSessionId.value = `local-${Date.now()}`;
     }
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : "加载失败";
   } finally {
-    // Scroll to bottom after loading completes and DOM renders
+    // Unlock the loading guard — only now render messages or empty state
+    sessionReady.value = true;
+    // Scroll to bottom after DOM renders
     if (messageList.value.length > 0) {
       await nextTick();
       scrollToBottom();
     }
+  }
+});
+
+// Auto-scroll to bottom when switching to a different history session
+// (guarded: skip during AI streaming since useChat handles that via anchorScroll)
+watch(messageList, async () => {
+  if (!isAiResponding.value) {
+    await nextTick();
+    scrollToBottom();
   }
 });
 </script>
@@ -316,9 +338,9 @@ onMounted(async () => {
           <span>{{ toolChainState === 0 ? '隐藏' : toolChainState === 1 ? '摘要' : '全部' }}</span>
         </button>
       </header>
-      <!-- Loading state: full-area skeleton -->
+      <!-- Full-area loading skeleton — stays active until session is fully resolved -->
       <div
-        v-if="loading"
+        v-if="!sessionReady"
         class="flex-1 flex flex-col items-center justify-center gap-4 px-6"
       >
         <div
@@ -327,7 +349,7 @@ onMounted(async () => {
         <p class="text-xs text-stone-400">正在加载...</p>
       </div>
 
-      <!-- Message Area (scrollable) -->
+      <!-- Message Area (scrollable) — only rendered after sessionReady -->
       <template v-else>
         <div
           class="relative flex flex-col min-h-0"

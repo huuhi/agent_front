@@ -5,6 +5,7 @@ import { fetchMCPServerList } from '../api'
 import Sidebar from '../components/Sidebar.vue'
 import MCPDrawer from '../components/MCPDrawer.vue'
 import APIConfigModal from '../components/APIConfigModal.vue'
+import UserMemoryModal from '../components/UserMemoryModal.vue'
 import ToastContainer from '../components/ToastContainer.vue'
 import { useSessions } from '../composables/useSessions'
 import { useAppState } from '../composables/useAppState'
@@ -23,14 +24,20 @@ const {
   requestDeleteSession,
   confirmDelete,
   reloadSessions,
+  resetSessions,
 } = useSessions()
 
 const {
   sidebarCollapsed,
   showMCPDrawer,
   showAPIConfigModal,
+  showUserMemoryModal,
   userApiConfigs,
+  userAvatarUrl,
+  userDisplayName,
   refreshUserApiConfigs,
+  refreshUserInfo,
+  resetState,
 } = useAppState()
 
 async function refreshMCPList() {
@@ -40,6 +47,10 @@ async function refreshMCPList() {
 }
 
 function handleLogout() {
+  // Clear in-memory state first (module-level singletons)
+  resetSessions()
+  resetState()
+  // Clear localStorage
   localStorage.removeItem('token')
   localStorage.removeItem('currentSessionId')
   localStorage.removeItem('selectedConfigId')
@@ -52,6 +63,16 @@ function handleLogout() {
 function handleSelectSession(id: string) {
   selectSession(id)
   router.push(id.startsWith('local-') ? '/chat' : `/chat/${id}`)
+}
+
+function handleOpenMemories() {
+  showUserMemoryModal.value = true
+}
+
+function handleNavigateSession(sessionId: string) {
+  showUserMemoryModal.value = false
+  selectSession(sessionId)
+  router.push(`/chat/${sessionId}`)
 }
 
 async function handleCreateNewSession() {
@@ -78,9 +99,10 @@ onMounted(async () => {
   if (oldMatch) {
     router.replace(`/chat/${oldMatch[1]}`)
   }
-  // If init was skipped (user was on auth page), load data now
-  reloadSessions()
+  // Load current user's sessions and config (always fetches fresh data)
+  await reloadSessions()
   refreshUserApiConfigs()
+  refreshUserInfo()
 })
 </script>
 
@@ -99,12 +121,15 @@ onMounted(async () => {
           :errorMsg="errorMsg"
           :showSessionDeleteConfirm="showSessionDeleteConfirm"
           :mcpCount="mockMCPList.length"
+          :avatarUrl="userAvatarUrl"
+          :displayName="userDisplayName"
           @selectSession="handleSelectSession"
           @createNewSession="handleCreateNewSession"
           @requestDeleteSession="requestDeleteSession"
           @confirmDelete="handleConfirmDelete"
           @openMCP="showMCPDrawer = true"
           @openAPIConfig="showAPIConfigModal = true"
+          @openMemories="handleOpenMemories"
           @logout="handleLogout"
         />
       </div>
@@ -153,6 +178,11 @@ onMounted(async () => {
       :configs="userApiConfigs"
       @close="showAPIConfigModal = false"
       @saved="refreshUserApiConfigs"
+    />
+    <UserMemoryModal
+      :visible="showUserMemoryModal"
+      @close="showUserMemoryModal = false"
+      @navigateSession="handleNavigateSession"
     />
     <ToastContainer />
   </div>

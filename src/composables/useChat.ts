@@ -14,7 +14,7 @@ export function useChat(
   enableThinking: Ref<boolean>,
   refreshSessionList: () => Promise<void>,
   scrollToBottom: () => void,
-  autoScrollIfNeeded: () => void,
+  anchorScroll: () => void,
   selectedMCPIds?: Ref<string[]>,
 ) {
   const inputText = ref('')
@@ -154,7 +154,7 @@ export function useChat(
         const flush = _pendingPlaceholderUpdate
         _pendingPlaceholderUpdate = null
         flush?.()
-        autoScrollIfNeeded()
+        anchorScroll()
       })
     }
   }
@@ -252,75 +252,107 @@ export function useChat(
 
     scrollToBottom()
 
-    // --- Typewriter (plain text during animation, markdown after finalize) ---
-    let typewriterPos = 0
-    let typewriterRaf: number | null = null
-    let typewriterDone = false
+    // --- Typewriter (time-based buffered output) ---
+    // ── Dynamic adaptive speed ──
+    // Based on buffer depth (pending chars), choose CPS so the per-frame
+    // step matches the user's expectation:
+    //   pending <  20 → ~1  char/frame  (60  cps)  near-idle, smooth
+    //   pending <  50 → ~3  chars/frame (200 cps)  moderate
+    //   pending < 150 → ~8  chars/frame (500 cps)  fast
+    //   pending >=150 → ~13 chars/frame (800 cps)  extreme catch-up
+    function getAdaptiveCps(pending: number): number {
+      if (pending >= 150) return 800
+      if (pending >= 50) return 500
+      if (pending >= 20) return 200
+      return 60
+    }
+
     let fullContent = ''
+    let _displayedLength = 0
+    let _typewriterRaf: number | null = null
+    let _streamDone = false
+    let _lastTickTime = 0
+    let _timeAccumulator = 0
 
-    let twFrame = 0
+    function updateDisplayText(shown: string) {
+      streamingContent.value = shown
+      updatePlaceholder((msg) => {
+        const textFrag = findLastTextFragment(msg)
+        if (textFrag) textFrag.content = shown
+        msg.content = shown
+      })
+    }
 
-    function typewriterTick() {
+    function typewriterTick(timestamp: number) {
       try {
-        if (typewriterPos < fullContent.length) {
-          twFrame++
-          const remaining = fullContent.length - typewriterPos
-          // Smaller step for smoother character-by-character reveal
-          const step = Math.max(1, Math.ceil(remaining / 180))
-          typewriterPos = Math.min(typewriterPos + step, fullContent.length)
-          const shown = fullContent.slice(0, typewriterPos)
-          streamingContent.value = shown
-          autoScrollIfNeeded()
-          // Only update placeholder every 4th frame — smooth text with 75% fewer re-renders
-          if (twFrame % 4 === 0) {
-            updatePlaceholder((msg) => {
-              const textFrag = findLastTextFragment(msg)
-              if (textFrag) textFrag.content = shown
-              msg.content = shown
-            })
-          }
-          typewriterRaf = requestAnimationFrame(typewriterTick)
-        } else if (typewriterDone) {
-          typewriterRaf = null
-          if (activePlaceholderId.value) {
-            finalizeMessage()
-          }
+        if (!_lastTickTime) _lastTickTime = timestamp
+        // Cap elapsed to 100ms to prevent huge jumps after tab-away / CPU stall
+        const elapsed = Math.min(timestamp - _lastTickTime, 100)
+        _lastTickTime = timestamp
+
+        const pending = fullContent.length - _displayedLength
+        // Dynamic adaptive speed based on buffer depth
+        const cps = getAdaptiveCps(pending)
+
+        _timeAccumulator += (elapsed / 1000) * cps
+        let toShow = Math.floor(_timeAccumulator)
+        _timeAccumulator -= toShow
+        toShow = Math.min(toShow, pending)
+
+        if (toShow > 0) {
+          _displayedLength += toShow
+          updateDisplayText(fullContent.slice(0, _displayedLength))
+          anchorScroll()
+        }
+
+        if (_displayedLength < fullContent.length) {
+          // More content to reveal → continue the loop
+          _typewriterRaf = requestAnimationFrame(typewriterTick)
+        } else if (_streamDone) {
+          // All content revealed AND stream finished → finalize
+          _typewriterRaf = null
+          _lastTickTime = 0
+          _timeAccumulator = 0
+          if (activePlaceholderId.value) finalizeMessage()
           refreshSessionList()
         } else {
-          typewriterRaf = null
+          // All revealed but stream still producing → idle (wait for next chunk)
+          _typewriterRaf = null
+          _lastTickTime = 0
+          _timeAccumulator = 0
         }
       } catch (e) {
         console.error('[Typewriter]', e)
-        typewriterPos = fullContent.length
-        streamingContent.value = fullContent
-        updatePlaceholder((msg) => {
-          const textFrag = findLastTextFragment(msg)
-          if (textFrag) textFrag.content = fullContent
-          msg.content = fullContent
-        })
-        if (typewriterDone && activePlaceholderId.value) {
+        // Fallback: reveal everything immediately
+        if (fullContent.length > _displayedLength) {
+          _displayedLength = fullContent.length
+          updateDisplayText(fullContent)
+        }
+        _typewriterRaf = null
+        if (_streamDone && activePlaceholderId.value) {
           finalizeMessage()
           refreshSessionList()
         }
-        typewriterRaf = null
       }
     }
 
     function kickTypewriter() {
-      if (!typewriterRaf) {
-        typewriterRaf = requestAnimationFrame(typewriterTick)
+      if (!_typewriterRaf) {
+        _typewriterRaf = requestAnimationFrame(typewriterTick)
       }
     }
 
     function finishTypewriter() {
-      if (typewriterPos < fullContent.length) {
-        typewriterPos = fullContent.length
-        streamingContent.value = fullContent
-        updatePlaceholder((msg) => {
-          const textFrag = findLastTextFragment(msg)
-          if (textFrag) textFrag.content = fullContent
-          msg.content = fullContent
-        })
+      if (_typewriterRaf) {
+        cancelAnimationFrame(_typewriterRaf)
+        _typewriterRaf = null
+      }
+      _lastTickTime = 0
+      _timeAccumulator = 0
+      if (_displayedLength < fullContent.length) {
+        _displayedLength = fullContent.length
+        updateDisplayText(fullContent)
+        anchorScroll()
       }
     }
 
@@ -349,14 +381,14 @@ export function useChat(
               msg.thinking.content = streamingThinking.value
               msg.thinking.completed = false
             })
-            autoScrollIfNeeded()
+            anchorScroll()
           } catch (e) { console.error('[onThinking]', e) }
         },
         onToolCall(tc) {
           try {
             const accumulatedThinking = streamingThinking.value
 
-            // Flush any buffered text before showing the tool fragment
+            // Flush any buffered text before showing the tool section
             finishTypewriter()
 
             // Accumulate streaming arguments for the same tool call ID
@@ -418,13 +450,13 @@ export function useChat(
               streamingThinking.value = ''
             }
 
-            autoScrollIfNeeded()
+            anchorScroll()
           } catch (e) { console.error('[onToolCall]', e) }
         },
         onToolResult(tr) {
           try {
             // Capture scroll position BEFORE DOM update
-            autoScrollIfNeeded()
+            anchorScroll()
 
             // Update the map's tool call for future lookups
             const mapCall = streamingToolCalls.value.get(tr.id)
@@ -467,11 +499,14 @@ export function useChat(
               currentSessionId.value = String(metadata.sessionId)
               localStorage.setItem('currentSessionId', String(metadata.sessionId))
             }
-            finishTypewriter()
-            if (activePlaceholderId.value) {
-              finalizeMessage()
+            // Signal the typewriter that no more chunks are coming.
+            // The typewriter tick will drain remaining buffer and finalize.
+            _streamDone = true
+            // If typewriter is idle (nothing pending), finalize immediately
+            if (!_typewriterRaf && _displayedLength >= fullContent.length) {
+              if (activePlaceholderId.value) finalizeMessage()
+              refreshSessionList()
             }
-            refreshSessionList()
           } catch (e) { console.error('[onDone]', e) }
         },
         onError(errMsg) {
@@ -507,6 +542,7 @@ export function useChat(
       }, abortController.value.signal)
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
+        finishTypewriter()
         updatePlaceholder((msg) => {
           msg.content = streamingContent.value + '\n\n> ⚠️ 响应已中断'
           if (streamingThinking.value) {
@@ -521,6 +557,7 @@ export function useChat(
         _pendingPlaceholderUpdate = null
         activePlaceholderId.value = null
       } else {
+        finishTypewriter()
         const msg = err instanceof Error ? err.message : '未知错误'
         updatePlaceholder((msg_) => {
           msg_.content = streamingContent.value || ''

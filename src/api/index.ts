@@ -13,9 +13,10 @@ import type {
   UserLoginDTO,
   UserRegisterDTO,
   UserPasswordDTO,
+  UserMemoryVO,
 } from './types'
 
-const BASE_URL = 'http://106.52.234.62:8989'
+const BASE_URL = ''
 
 function getToken(): string | null {
   return localStorage.getItem('token')
@@ -225,6 +226,20 @@ export async function setPassword(data: UserPasswordDTO): Promise<void> {
     method: 'PUT',
     body: JSON.stringify(data),
   })
+}
+
+// ========== User Memory ==========
+
+/** GET /user/user_memory?key= — 获取长期记忆列表 */
+export async function fetchUserMemories(key?: string): Promise<UserMemoryVO[]> {
+  const params = new URLSearchParams()
+  if (key) params.set('key', key)
+  return request<UserMemoryVO[]>(`/user/user-memory?${params.toString()}`)
+}
+
+/** DELETE /user/user-memory/{id} — 删除一条记忆 */
+export async function deleteUserMemory(id: string | number): Promise<void> {
+  await request<void>(`/user/user-memory/${id}`, { method: 'DELETE' })
 }
 
 // ========== File Upload ==========
