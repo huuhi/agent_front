@@ -5,19 +5,33 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5173,
+    },
+
     proxy: {
-      // REST API
-      '/history': { target: 'http://localhost:8080', changeOrigin: true },
-      '/mcp': { target: 'http://localhost:8080', changeOrigin: true },
-      '/user': { target: 'http://localhost:8080', changeOrigin: true },
-      '/file': { target: 'http://localhost:8080', changeOrigin: true },
-      '/knowledge': { target: 'http://localhost:8080', changeOrigin: true },
-      '/common': { target: 'http://localhost:8080', changeOrigin: true },
-      // Chat — only proxy API paths, not Vue Router /chat/:sessionId
-      '/chat/stream': { target: 'http://localhost:8080', changeOrigin: true },
-      '/chat/model': { target: 'http://localhost:8080', changeOrigin: true },
-      // WebSocket
-      '/ws': { target: 'ws://localhost:8080', ws: true, changeOrigin: true },
+      // ── Unified /api prefix ─────────────────────────────────────
+      // Backend has added server.servlet.context-path=/api, so every
+      // request path already carries the prefix.  No rewrite needed.
+      '/api': {
+        target: 'http://106.52.234.62:8989',
+        changeOrigin: true,
+      },
+
+      // ── WebSocket under /api prefix ─────────────────────────────
+      '/api/ws': {
+        target: 'ws://106.52.234.62:8989',
+        ws: true,
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            if ((err as any)?.code === 'ECONNREFUSED') return
+            console.error(`[ws proxy] ${err.message}`)
+          })
+        },
+      },
     },
   },
 })

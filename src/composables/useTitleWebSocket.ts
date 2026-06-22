@@ -1,11 +1,26 @@
 import { ref, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 import type { ComponentSession } from '../types/chat'
+import { getUserId } from '../utils/jwt'
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/1`
+/**
+ * Build the WebSocket URL using the authenticated user's ID from JWT.
+ * Falls back to '0' if token is missing (the server will reject anyway).
+ */
+function buildWsUrl(): string {
+  const uid = getUserId() || '0'
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/ws/${uid}`
+}
+
 const RECONNECT_DELAY = 3000
 
-export function useTitleWebSocket(sessionList: Ref<ComponentSession[]>) {
+export function useTitleWebSocket(
+  sessionList: Ref<ComponentSession[]>,
+  /** Current session ID — used to precisely locate the session to update
+   *  when a title arrives, instead of blindly writing to sessionList[0]. */
+  currentSessionId: Ref<string>,
+) {
   const wsConnected = ref(false)
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -13,8 +28,10 @@ export function useTitleWebSocket(sessionList: Ref<ComponentSession[]>) {
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
 
+    const url = buildWsUrl()
+
     try {
-      ws = new WebSocket(WS_URL)
+      ws = new WebSocket(url)
     } catch {
       scheduleReconnect()
       return
@@ -29,12 +46,19 @@ export function useTitleWebSocket(sessionList: Ref<ComponentSession[]>) {
         const data = JSON.parse(event.data)
         if (data.type === 'title' && data.data) {
           const title = String(data.data)
-          // Update the first session (most recent) with the new title
-          if (sessionList.value.length > 0) {
-            const updated = [...sessionList.value]
-            updated[0] = { ...updated[0], title }
-            sessionList.value = updated
+          // ── Precise ID-based lookup ────────────────────────────
+          // NEVER fall back to sessionList[0] — that would overwrite
+          // an unrelated session when the real target is missing.
+          const target = sessionList.value.find(
+            s => String(s.id) === String(currentSessionId.value)
+          )
+          if (target) {
+            target.title = title
+            // Trigger reactivity by replacing the array reference
+            sessionList.value = [...sessionList.value]
           }
+          // If no matching session found, silently ignore — the
+          // session list will catch up on next refreshSessionList().
         }
       } catch {
         // Ignore parse errors
@@ -73,7 +97,6 @@ export function useTitleWebSocket(sessionList: Ref<ComponentSession[]>) {
     wsConnected.value = false
   }
 
-  // Auto-disconnect on unmount
   onUnmounted(disconnect)
 
   return {

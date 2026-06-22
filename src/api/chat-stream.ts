@@ -1,6 +1,6 @@
 import type { ChatDTO, ChatUserMessageDTO } from './types'
 
-const BASE_URL = ''
+const BASE_URL = '/api'
 
 // ========== Types ==========
 

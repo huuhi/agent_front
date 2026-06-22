@@ -16,13 +16,66 @@ export function useChat(
   scrollToBottom: () => void,
   anchorScroll: () => void,
   selectedMCPIds?: Ref<string[]>,
+  /** Smart force-scroll — pass a positive duration to follow CSS
+   *  transitions (tool output fade-in, grid expand, etc.). */
+  forceScroll?: (durationMs?: number) => void,
 ) {
   const inputText = ref('')
   const isAiResponding = ref(false)
+  /** True only during the initial thinking phase (before any text or
+   *  tool call arrives).  Becomes permanently false once content or
+   *  tool calls start.  Used to show/hide the "thinking…" spinner
+   *  independently of the main thinking card. */
+  const isMainThinking = ref(false)
   const abortController = ref<AbortController | null>(null)
   const streamingContent = ref('')
   const streamingThinking = ref('')
   const streamingToolCalls = ref<Map<string, ComponentToolCall>>(new Map())
+  // ── Thinking typewriter buffer (lives at composable scope so
+  //    finalizeMessage can flush it).  Reset at the top of each
+  //    sendMessage() call together with streamingThinking. ──
+  let _fullThinkingBuffer = ''
+  let _displayedThinkingLen = 0
+  let _thinkingRaf: number | null = null
+  let _typewriterRaf: number | null = null
+  let _thinkingTickTime = 0
+  let _thinkingAccumulator = 0
+  /** Lock: content typewriter must NOT start while this is true.
+   *  Set by kickThinkingTypewriter(), cleared by finishThinkingTypewriter()
+   *  and by thinkingTick when it drains naturally. */
+  let _isThinkingActive = false
+
+  /** ── Text fragment offset for multi-segment (text→tool→text) ──
+   *  Records fullContent.length at the moment a NEW text fragment is
+   *  created (tool-to-text boundary).  updateDisplayText and
+   *  finalizeMessage slice streamingContent by this offset so each
+   *  fragment only carries its own segment, preventing duplication. */
+  let currentTextFragmentStartOffset = 0
+
+  /** ── Stream state machine ─────────────────────────────────────────
+   *  Strict target that tells every writer exactly WHERE to place its
+   *  data.  Set on each SSE event boundary and never queried via
+   *  dynamic "find last tool fragment" lookups.
+   *
+   *  Transitions:
+   *    onThinking  (no tool frags yet) → MAIN_THINKING
+   *    onThinking  (tool frags exist)  → TOOL_THINKING
+   *    onTextDelta                       → MAIN_CONTENT
+   *    onToolCall  (with accumulated)   → TOOL_THINKING
+   *    onToolCall  (without)            → TOOL_INPUT
+   */
+  type _StreamTarget = 'MAIN_THINKING' | 'MAIN_CONTENT' | 'TOOL_THINKING' | 'TOOL_INPUT'
+  let _streamTarget: _StreamTarget = 'MAIN_THINKING'
+
+  /** ── Main thinking completion guard ──────────────────────────────────
+   *  Once true, ALL subsequent thinking chunks are FORCED to
+   *  TOOL_THINKING and NEVER touch msg.thinking.
+   *
+   *  Set to true in onTextDelta (first text delta arrives) and
+   *  onToolCall (first tool call arrives).
+   *  Reset to false at the top of each sendMessage() call. */
+  let hasFinishedMainThinking = false
+
   const activePlaceholderId = ref<string | null>(null)
 
   // ========== Immediate file upload on selection ==========
@@ -42,17 +95,19 @@ export function useChat(
     return undefined
   }
 
-  function ensureTextFragmentLast() {
-    if (!activePlaceholderId.value) return
+  function ensureTextFragmentLast(): boolean {
+    if (!activePlaceholderId.value) return false
     const idx = messageList.value.findIndex(m => m.id === activePlaceholderId.value)
-    if (idx === -1) return
+    if (idx === -1) return false
     const msg = messageList.value[idx]
     const fragments = msg.fragments || []
     const lastFrag = fragments[fragments.length - 1]
     if (!lastFrag || lastFrag.kind !== 'text') {
       msg.fragments = [...fragments, { kind: 'text', content: '' }]
       messageList.value = [...messageList.value]
+      return true
     }
+    return false
   }
 
   async function onFileSelected(event: Event) {
@@ -172,22 +227,157 @@ export function useChat(
     if (!activePlaceholderId.value) return
     updatePlaceholder((msg) => {
       msg.content = streamingContent.value
-      // Sync the last text fragment
+      // Sync the last text fragment — only its local segment, not
+      // the accumulated fullContent (prevents multi-segment duplication).
       const textFrag = findLastTextFragment(msg)
       if (textFrag) {
-        textFrag.content = streamingContent.value
+        textFrag.content = streamingContent.value.slice(currentTextFragmentStartOffset)
       }
-      if (streamingThinking.value) {
-        msg.thinking = { content: streamingThinking.value, durationMs: 0, completed: true }
+
+      // ── Ensure main thinking is permanently marked as completed ──
+      // This is unconditional: even if _fullThinkingBuffer was already
+      // cleared (e.g. transferred to tool fragments in onToolCall),
+      // the thinking card must stay visible with completed=true.
+      if (msg.thinking) {
+        msg.thinking.completed = true
+      }
+
+      if (_fullThinkingBuffer) {
+        // Flush any remaining buffered thinking chars
+        finishThinkingTypewriter()
+        // Route remaining thinking: if tool fragments exist, attach to
+        // the last tool fragment; otherwise attach to the main thinking area.
+        const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+        if (toolFrags.length > 0) {
+          const lastFrag = toolFrags[toolFrags.length - 1]
+          if (!lastFrag.thinking) {
+            lastFrag.thinking = { content: '', durationMs: 0, completed: true }
+          }
+          lastFrag.thinking.content = _fullThinkingBuffer
+          lastFrag.thinking.completed = true
+        } else {
+          msg.thinking = { content: _fullThinkingBuffer, durationMs: 0, completed: true }
+        }
       }
       msg.timestamp = new Date().toISOString()
     })
     streamingContent.value = ''
     streamingThinking.value = ''
+    _fullThinkingBuffer = ''
+    _displayedThinkingLen = 0
     streamingToolCalls.value = new Map()
     if (_placeholderRaf) { cancelAnimationFrame(_placeholderRaf); _placeholderRaf = null }
     _pendingPlaceholderUpdate = null
     activePlaceholderId.value = null
+  }
+
+  // ── Thinking typewriter (composable-level: used by both sendMessage
+  //    and finalizeMessage) ─────────────────────────────────────────
+  /** Write thinking content to the currently active target.
+   *  No dynamic "find last tool fragment" lookups — the routing
+   *  decision was already made when _streamTarget was set. */
+  function updateThinkingText(shown: string) {
+    streamingThinking.value = shown
+    updatePlaceholder((msg) => {
+      if (_streamTarget === 'MAIN_THINKING') {
+        if (!msg.thinking) {
+          msg.thinking = { content: '', durationMs: 0, completed: false }
+        }
+        msg.thinking.content = shown
+        msg.thinking.completed = false
+      } else {
+        // TOOL_THINKING → write to the LAST tool fragment's thinking
+        const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+        const lastFrag = toolFrags[toolFrags.length - 1]
+        if (!lastFrag) return  // no tool fragment yet → drop
+        if (!lastFrag.thinking) {
+          lastFrag.thinking = { content: '', durationMs: 0, completed: false }
+        }
+        lastFrag.thinking.content = shown
+        lastFrag.thinking.completed = false
+      }
+    })
+  }
+
+  function thinkingTick(timestamp: number) {
+    try {
+      if (!_thinkingTickTime) _thinkingTickTime = timestamp
+      const elapsed = Math.min(timestamp - _thinkingTickTime, 100)
+      _thinkingTickTime = timestamp
+
+      const pending = _fullThinkingBuffer.length - _displayedThinkingLen
+      const cps = 80 // steady chars/sec for gentle reveal
+      _thinkingAccumulator += (elapsed / 1000) * cps
+      let toShow = Math.floor(_thinkingAccumulator)
+      _thinkingAccumulator -= toShow
+      toShow = Math.min(toShow, pending)
+
+      if (toShow > 0) {
+        _displayedThinkingLen += toShow
+        updateThinkingText(_fullThinkingBuffer.slice(0, _displayedThinkingLen))
+        anchorScroll()
+      }
+
+      if (_displayedThinkingLen < _fullThinkingBuffer.length) {
+        _thinkingRaf = requestAnimationFrame(thinkingTick)
+      } else {
+        // Natural drain complete — release the content-typewriter lock
+        _thinkingRaf = null
+        _thinkingTickTime = 0
+        _thinkingAccumulator = 0
+        _isThinkingActive = false
+      }
+    } catch (e) {
+      console.error('[ThinkingTypewriter]', e)
+      if (_fullThinkingBuffer.length > _displayedThinkingLen) {
+        _displayedThinkingLen = _fullThinkingBuffer.length
+        updateThinkingText(_fullThinkingBuffer)
+      }
+      _thinkingRaf = null
+    }
+  }
+
+  function kickThinkingTypewriter() {
+    _isThinkingActive = true
+    if (!_thinkingRaf) {
+      _thinkingRaf = requestAnimationFrame(thinkingTick)
+    }
+  }
+
+  function finishThinkingTypewriter() {
+    if (_thinkingRaf) {
+      cancelAnimationFrame(_thinkingRaf)
+      _thinkingRaf = null
+    }
+    _thinkingTickTime = 0
+    _thinkingAccumulator = 0
+    if (_displayedThinkingLen < _fullThinkingBuffer.length) {
+      _displayedThinkingLen = _fullThinkingBuffer.length
+      updateThinkingText(_fullThinkingBuffer)
+      anchorScroll()
+    }
+    _isThinkingActive = false
+  }
+
+  /** ── Clear ALL typewriter animation frame handles ─────────────────
+   *  Must be called when the component unmounts or the user switches
+   *  sessions while a stream is still active.  Cancels both the
+   *  thinking typewriter and the content typewriter rAF loops, and
+   *  resets all associated counters to prevent stale closure access
+   *  to destroyed DOM nodes. */
+  function clearAllTypewriterTimers() {
+    if (_thinkingRaf !== null) {
+      cancelAnimationFrame(_thinkingRaf)
+      _thinkingRaf = null
+    }
+    if (_typewriterRaf !== null) {
+      cancelAnimationFrame(_typewriterRaf)
+      _typewriterRaf = null
+    }
+    _thinkingTickTime = 0
+    _thinkingAccumulator = 0
+    _displayedThinkingLen = 0
+    _isThinkingActive = false
   }
 
   // ========== Send message ==========
@@ -197,6 +387,9 @@ export function useChat(
     if ((!text && files.length === 0) || isAiResponding.value) return
 
     isAiResponding.value = true
+    isMainThinking.value = true
+    hasFinishedMainThinking = false
+    currentTextFragmentStartOffset = 0
     abortController.value = new AbortController()
 
     // --- Build file messages from pre-uploaded files ---
@@ -269,7 +462,6 @@ export function useChat(
 
     let fullContent = ''
     let _displayedLength = 0
-    let _typewriterRaf: number | null = null
     let _streamDone = false
     let _lastTickTime = 0
     let _timeAccumulator = 0
@@ -278,7 +470,7 @@ export function useChat(
       streamingContent.value = shown
       updatePlaceholder((msg) => {
         const textFrag = findLastTextFragment(msg)
-        if (textFrag) textFrag.content = shown
+        if (textFrag) textFrag.content = shown.slice(currentTextFragmentStartOffset)
         msg.content = shown
       })
     }
@@ -337,6 +529,12 @@ export function useChat(
     }
 
     function kickTypewriter() {
+      // ── Playback lock ──
+      // Content must NOT start playing while the thinking typewriter is
+      // still revealing characters.  The lock is released by either
+      // finishThinkingTypewriter() (flush) or thinkingTick draining
+      // its buffer naturally.
+      if (_isThinkingActive) return
       if (!_typewriterRaf) {
         _typewriterRaf = requestAnimationFrame(typewriterTick)
       }
@@ -361,32 +559,85 @@ export function useChat(
       await streamChat(dto, {
         onTextDelta(content: string) {
           try {
-            if (streamingThinking.value) {
-              updatePlaceholder((msg) => {
-                if (msg.thinking) msg.thinking.completed = true
-              })
+            // First content → main thinking phase is over
+            if (isMainThinking.value) isMainThinking.value = false
+            hasFinishedMainThinking = true
+
+            // ── Flush thinking typewriter NOW ──────────────────────
+            // Any remaining buffered thinking chars must be revealed
+            // instantly before we switch to MAIN_CONTENT.
+            finishThinkingTypewriter()
+
+            // ── Mark main thinking & tool fragments as completed ───
+            // Unconditionally: even if _fullThinkingBuffer has already
+            // been fully displayed, the completed flag ensures the
+            // thinking card stays visible as a "completed" block.
+            updatePlaceholder((msg) => {
+              if (msg.thinking) msg.thinking.completed = true
+              const toolFrags = msg.fragments?.filter((f): f is ToolSectionFragment => f.kind === 'tools') || []
+              for (const f of toolFrags) {
+                if (f.thinking) f.thinking.completed = true
+              }
+            })
+
+            // ── State machine: switch to MAIN_CONTENT ──────────────
+            _streamTarget = 'MAIN_CONTENT'
+
+            // If a new text fragment was created (tool-to-text boundary),
+            // record the offset so updateDisplayText only writes the
+            // current segment's content to this fragment.
+            if (ensureTextFragmentLast()) {
+              currentTextFragmentStartOffset = fullContent.length
             }
-            ensureTextFragmentLast()
             fullContent += content
+            // Lock was released by finishThinkingTypewriter() — safe to play
             kickTypewriter()
           } catch (e) { console.error('[onTextDelta]', e) }
         },
         onThinking(content: string) {
           try {
-            streamingThinking.value += content
+            _fullThinkingBuffer += content
+
+            // ── State machine: determine target ──
+            // If main thinking has already finished (text or tool call
+            // already arrived), this is ALWAYS tool step-thinking,
+            // NEVER main thinking.
+            if (hasFinishedMainThinking) {
+              _streamTarget = 'TOOL_THINKING'
+            } else {
+              const hasToolFrags = _streamTarget === 'TOOL_INPUT' ||
+                _streamTarget === 'TOOL_THINKING'
+              _streamTarget = hasToolFrags ? 'TOOL_THINKING' : 'MAIN_THINKING'
+            }
+
+            // Ensure the display slot exists so the card renders.
             updatePlaceholder((msg) => {
-              if (!msg.thinking) {
+              if (_streamTarget === 'MAIN_THINKING' && !msg.thinking) {
                 msg.thinking = { content: '', durationMs: 0, completed: false }
               }
-              msg.thinking.content = streamingThinking.value
-              msg.thinking.completed = false
             })
-            anchorScroll()
+            kickThinkingTypewriter()
           } catch (e) { console.error('[onThinking]', e) }
         },
         onToolCall(tc) {
           try {
-            const accumulatedThinking = streamingThinking.value
+            // First tool call → main thinking phase is over.
+            // Subsequent step-thinking belongs in tool fragments.
+            if (isMainThinking.value) isMainThinking.value = false
+            hasFinishedMainThinking = true
+
+            // ── Mark main thinking as completed BEFORE transfer ───
+            // We are about to copy the thinking to a tool fragment;
+            // the main thinking card must be marked completed so it
+            // never disappears when the stream ends.
+            updatePlaceholder((msg) => {
+              if (msg.thinking) msg.thinking.completed = true
+            })
+
+            // Flush the thinking typewriter so all pre-tool thinking
+            // is fully revealed before we move it to the fragment.
+            finishThinkingTypewriter()
+            const accumulatedThinking = _fullThinkingBuffer
 
             // Flush any buffered text before showing the tool section
             finishTypewriter()
@@ -430,9 +681,12 @@ export function useChat(
                   toolsFrag.calls.push(toolCall)
                 }
 
-                if (accumulatedThinking) {
-                  msg.thinking = undefined
-                }
+                // ⚠️  CRITICAL: we do NOT clear msg.thinking here.
+                // The accumulated pre-tool thinking stays on the main
+                // thinking block so it is never lost after streaming
+                // ends.  The tool fragment carries a copy in
+                // frag.thinking for in-card display.
+                // msg.thinking.completed was already set to true above.
               })
             } else {
               // Throttled: only update input text, batched via rAF
@@ -448,14 +702,27 @@ export function useChat(
 
             if (accumulatedThinking) {
               streamingThinking.value = ''
+              _fullThinkingBuffer = ''
+              _displayedThinkingLen = 0
             }
+
+            // ── State machine: tool mode activated ─────────────────
+            // From this point onward, any thinking chunks belong in
+            // the tool fragment (TOOL_THINKING), not the main area.
+            _streamTarget = 'TOOL_INPUT'
 
             anchorScroll()
           } catch (e) { console.error('[onToolCall]', e) }
         },
         onToolResult(tr) {
           try {
-            // Capture scroll position BEFORE DOM update
+            // ── Smart scroll: track the CSS transition ─────────────
+            // If the user is at the bottom, a timed RAF burst follows
+            // the ~300ms tool-output fade-in so the viewport stays
+            // locked to the expanding content.  If the user scrolled
+            // away, forceScroll(400) is a no-op (guarded by
+            // isLockedToBottom inside useAutoScroll).
+            forceScroll?.(400)
             anchorScroll()
 
             // Update the map's tool call for future lookups
@@ -512,10 +779,13 @@ export function useChat(
         onError(errMsg) {
           try {
             finishTypewriter()
+            finishThinkingTypewriter()
             updatePlaceholder((msg) => {
               msg.content = streamingContent.value || ''
-              if (streamingThinking.value) {
-                msg.thinking = { content: streamingThinking.value, durationMs: 0, completed: true }
+              if (_fullThinkingBuffer) {
+                msg.thinking = { content: _fullThinkingBuffer, durationMs: 0, completed: true }
+              } else if (msg.thinking) {
+                msg.thinking.completed = true
               }
               const errTool: ComponentToolCall = {
                 id: 'stream-error',
@@ -543,10 +813,13 @@ export function useChat(
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         finishTypewriter()
+        finishThinkingTypewriter()
         updatePlaceholder((msg) => {
           msg.content = streamingContent.value + '\n\n> ⚠️ 响应已中断'
-          if (streamingThinking.value) {
-            msg.thinking = { content: streamingThinking.value, durationMs: 0, completed: true }
+          if (_fullThinkingBuffer) {
+            msg.thinking = { content: _fullThinkingBuffer, durationMs: 0, completed: true }
+          } else if (msg.thinking) {
+            msg.thinking.completed = true
           }
           msg.timestamp = new Date().toISOString()
         })
@@ -558,9 +831,11 @@ export function useChat(
         activePlaceholderId.value = null
       } else {
         finishTypewriter()
+        finishThinkingTypewriter()
         const msg = err instanceof Error ? err.message : '未知错误'
         updatePlaceholder((msg_) => {
           msg_.content = streamingContent.value || ''
+          if (msg_.thinking) msg_.thinking.completed = true
           msg_.timestamp = new Date().toISOString()
           msg_.fragments = [...(msg_.fragments || []), {
             kind: 'tools',
@@ -574,6 +849,7 @@ export function useChat(
       }
     } finally {
       isAiResponding.value = false
+      isMainThinking.value = false
       abortController.value = null
     }
   }
@@ -581,6 +857,7 @@ export function useChat(
   return {
     inputText,
     isAiResponding,
+    isMainThinking,
     uploadedPreviews,
     uploadingCount,
     uploadErrors,
@@ -590,5 +867,6 @@ export function useChat(
     handleKeydown,
     cancelStreaming,
     sendMessage,
+    clearAllTypewriterTimers,
   }
 }

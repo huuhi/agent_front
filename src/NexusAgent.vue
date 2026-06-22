@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, onUnmounted } from "vue";
 import { marked } from "marked";
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 import {
   fetchUserApiConfigs,
 } from "./api";
-import { setupCodeCopy } from "./utils/markdown";
+
 import { useAutoScroll } from "./composables/useAutoScroll";
 import { useSessions } from "./composables/useSessions";
 import { useChat } from "./composables/useChat";
@@ -38,8 +38,10 @@ marked.use({
 const {
   messageContainerRef,
   showScrollButton,
+  isLockedToBottom,
   scrollToBottom,
   anchorScroll,
+  forceScroll,
   handleScroll,
 } = useAutoScroll();
 
@@ -65,10 +67,11 @@ const {
 
 // State that useChat needs access to (to handle session updates)
 import { ref, nextTick, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useAppState } from "./composables/useAppState";
 import type { UserApiConfigVO } from "./api/types";
 const route = useRoute();
+const router = useRouter();
 
 /** Guards against the "new chat" flash: only true after session + messages are fully resolved */
 const sessionReady = ref(false);
@@ -92,7 +95,6 @@ const selectedKnowledgeBase = ref<{
 } | null>(null);
 const enableRag = ref(localStorage.getItem('enableRag') !== 'false');
 const enableThinking = ref(localStorage.getItem('enableThinking') !== 'false');
-const expandedThinking = ref<Set<string>>(new Set());
 const showAllAttachments = ref<Set<string>>(new Set());
 const expandedSteps = ref<Set<string>>(new Set());
 const toolChainState = ref<0 | 1 | 2>(
@@ -105,6 +107,7 @@ const selectedMCPIds = ref<string[]>(
 const {
   inputText,
   isAiResponding,
+  isMainThinking,
   uploadedPreviews,
   uploadingCount,
   uploadErrors,
@@ -114,6 +117,7 @@ const {
   handleKeydown,
   cancelStreaming,
   sendMessage,
+  clearAllTypewriterTimers,
 } = useChat(
   messageList,
   currentSessionId,
@@ -124,9 +128,35 @@ const {
   scrollToBottom,
   anchorScroll,
   selectedMCPIds,
+  forceScroll,
 );
 
-const { connect: connectTitleWs } = useTitleWebSocket(sessionList);
+const { connect: connectTitleWs } = useTitleWebSocket(sessionList, currentSessionId);
+
+// ── Route sync + sidebar ID sync: when a local session gets a real
+//    server ID ──────────────────────────────────────────────────────
+// The first message in a new chat creates a `local-{ts}` placeholder.
+// Once the backend assigns a real sessionId:
+//   1. Replace the placeholder's ID in sessionList with the real ID
+//      so the sidebar entry stays alive and clickable.
+//   2. Update the URL from /chat to /chat/{realId} using router.replace.
+watch(currentSessionId, (newId, oldId) => {
+  if (oldId?.startsWith('local-') && newId && !newId.startsWith('local-')) {
+    // ── Sidebar: swap the placeholder ID ─────────────────────────
+    const localIdx = sessionList.value.findIndex(s => s.id === oldId)
+    if (localIdx !== -1) {
+      const updated = [...sessionList.value]
+      updated[localIdx] = { ...updated[localIdx], id: newId }
+      sessionList.value = updated
+    }
+
+    // ── URL: replace /chat with /chat/{realId} ───────────────────
+    const routeSessionId = route.params.sessionId as string | undefined
+    if (!routeSessionId) {
+      router.replace({ name: 'chat', params: { sessionId: newId } })
+    }
+  }
+})
 
 // ========== Actions ==========
 function selectModel(model: ModelOption) {
@@ -195,12 +225,6 @@ async function handleCreateNewSession() {
   scrollToBottom();
 }
 
-function toggleThinking(id: string) {
-  const s = new Set(expandedThinking.value);
-  s.has(id) ? s.delete(id) : s.add(id);
-  expandedThinking.value = s;
-}
-
 function toggleAttachments(id: string) {
   const s = new Set(showAllAttachments.value);
   s.has(id) ? s.delete(id) : s.add(id);
@@ -211,11 +235,19 @@ function toggleToolStep(id: string) {
   const s = new Set(expandedSteps.value);
   s.has(id) ? s.delete(id) : s.add(id);
   expandedSteps.value = s;
+  forceScroll();
 }
 
 function toggleToolChain() {
   toolChainState.value = ((toolChainState.value + 1) % 3) as 0 | 1 | 2;
   localStorage.setItem("toolChainState", String(toolChainState.value));
+
+  // Each MessageBubble watches toolChainState locally and auto-expands
+  // (state 2) or auto-collapses (states 0/1) its own thinking area.
+  // Clear collapsed-tool-step set so every tool detail expands.
+  if (toolChainState.value === 2) expandedSteps.value = new Set();
+
+  forceScroll();
 }
 
 function toggleMCPSelection(id: string) {
@@ -235,9 +267,29 @@ function setToken(token: string) {
 // @ts-expect-error expose for dev console
 window.__setToken = setToken;
 
+// ═══════════════════════════════════════════════════════════════════
+//  Code copy — event delegation on messageContainerRef
+//
+//  Instead of a one-time querySelector scan (which misses dynamically
+//  rendered code blocks in v-html), we listen for click events
+//  bubbling up from .code-copy-btn inside the scroll container.
+//  This works for freshly streamed messages AND history replays.
+// ═══════════════════════════════════════════════════════════════════
+
+const _codeCopyHandler = (e: MouseEvent) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('.code-copy-btn')
+  if (!btn) return
+  e.stopPropagation()
+  const wrapper = btn.closest('.code-block-wrapper')
+  const code = wrapper?.querySelector('code')?.textContent || ''
+  navigator.clipboard.writeText(code).then(() => {
+    btn.classList.add('copied')
+    setTimeout(() => btn.classList.remove('copied'), 1500)
+  })
+}
+
 // ========== Lifecycle ==========
 onMounted(async () => {
-  setupCodeCopy();
   connectTitleWs();
 
   // Wait for session list to be fully loaded (from AppLayout's reloadSessions)
@@ -297,6 +349,8 @@ onMounted(async () => {
   } finally {
     // Unlock the loading guard — only now render messages or empty state
     sessionReady.value = true;
+    // Bind code-copy delegation on the scroll container (now rendered).
+    messageContainerRef.value?.addEventListener('click', _codeCopyHandler);
     // Scroll to bottom after DOM renders
     if (messageList.value.length > 0) {
       await nextTick();
@@ -305,13 +359,23 @@ onMounted(async () => {
   }
 });
 
-// Auto-scroll to bottom when switching to a different history session
-// (guarded: skip during AI streaming since useChat handles that via anchorScroll)
+// ── Cleanup on unmount: remove event delegation, cancel all
+//    typewriter animation frames to prevent stale closure accesses. ──
+onUnmounted(() => {
+  messageContainerRef.value?.removeEventListener('click', _codeCopyHandler);
+  clearAllTypewriterTimers();
+  cancelStreaming();
+});
+
+// Auto-scroll on message changes — only when user hasn't scrolled away.
+// During AI streaming this fires on every typewriter tick but the
+// isLockedToBottom guard ensures user's scroll position is never overridden.
 watch(messageList, async () => {
-  if (!isAiResponding.value) {
+  if (isLockedToBottom.value) {
     await nextTick();
     scrollToBottom();
   }
+
 });
 </script>
 
@@ -367,12 +431,11 @@ watch(messageList, async () => {
                 :msg="msg"
                 :selectedModelName="selectedModel.name"
                 :isAiResponding="isAiResponding"
+                :isMainThinking="isMainThinking"
                 :isLastMessage="msg === messageList[messageList.length - 1]"
-                :expandedThinking="expandedThinking"
                 :showAllAttachments="showAllAttachments"
                 :toolChainState="toolChainState"
                 :expandedSteps="expandedSteps"
-                @toggleThinking="toggleThinking"
                 @toggleAttachments="toggleAttachments"
                 @toggleToolStep="toggleToolStep"
               />
@@ -398,7 +461,7 @@ watch(messageList, async () => {
                       d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
                     />
                   </svg> -->
-                  <img src="/public/logo.png" alt="">
+                  <img src="/logo.png" alt="">
                 </div>
                 <h3 class="text-lg font-semibold text-stone-700 mb-2">
                   开始新的对话
@@ -525,7 +588,8 @@ select {
 .markdown-body {
   color: #44403c;
   line-height: 1.75;
-  word-break: break-word;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 .markdown-body h1 {
   font-size: 1.375em;
@@ -592,7 +656,8 @@ select {
 .markdown-body pre {
   margin: 0.75em 0;
   border-radius: 10px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid #e7e5e4;
   background: #fafaf9;
 }
@@ -605,6 +670,9 @@ select {
   background: transparent;
   border-radius: 0;
   color: #44403c;
+  /* Don't break words inside code blocks — let horizontal scrollbar handle overflow */
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .markdown-body hr {
   border: none;

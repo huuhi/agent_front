@@ -176,9 +176,47 @@ export function useSessions() {
   async function refreshSessionList() {
     try {
       const sessions = await fetchSessionList()
-      if (sessions.length > 0) {
-        sessionList.value = sessions.map(mapSession)
+      const mapped = sessions.map(mapSession)
+
+      // ── Mechanism A: preserve sessions still in local- state ─────
+      const localSessions = sessionList.value.filter(
+        s => String(s.id).startsWith('local-')
+      )
+
+      // ── Mechanism B: preserve the current active session even if
+      //    it already has a real ID but hasn't been persisted yet
+      //    (race: first message streamed, backend not fully committed).
+      //    ───────────────────────────────────────────────────────────
+      let activeSession: ComponentSession | null = null
+      if (
+        currentSessionId.value &&
+        !String(currentSessionId.value).startsWith('local-')
+      ) {
+        const inBackend = mapped.some(
+          s => String(s.id) === String(currentSessionId.value)
+        )
+        if (!inBackend) {
+          const found = sessionList.value.find(
+            s => String(s.id) === String(currentSessionId.value)
+          )
+          if (found) activeSession = found
+        }
       }
+
+      // ── Merge: local sessions + active session + backend list,
+      //    deduped by ID (backend list may already contain the
+      //    active session if we lost the race the other way).
+      const backendIds = new Set(mapped.map(s => String(s.id)))
+      const toPreserve: ComponentSession[] = []
+      if (activeSession && !backendIds.has(String(activeSession.id))) {
+        toPreserve.push(activeSession)
+      }
+
+      sessionList.value = [
+        ...localSessions,
+        ...toPreserve,
+        ...mapped,
+      ]
     } catch { /* ignore */ }
   }
 

@@ -35,6 +35,31 @@ export function getUserDisplayName(): string {
   if (!token) return '用户'
   const payload = parseJwt<Record<string, unknown>>(token)
   if (!payload) return '用户'
-  const name = payload['username'] || payload['email'] || payload['sub']
+  const name = payload['user_name'] || payload['username'] || payload['email'] || payload['sub']
   return typeof name === 'string' ? name : '用户'
+}
+
+/**
+ * Extract user ID from the JWT token.
+ * Backend stores it in the `user_id` claim (see JwtUtil.createJWT).
+ */
+export function getUserId(): string | null {
+  const token = localStorage.getItem('token')
+  if (!token) return null
+  const payload = parseJwt<Record<string, unknown>>(token)
+  if (!payload) return null
+  const id = payload['user_id']
+  return id != null ? String(id) : null
+}
+
+/**
+ * Extract user_name claim from JWT (used for WebSocket path, etc.).
+ */
+export function getUserName(): string | null {
+  const token = localStorage.getItem('token')
+  if (!token) return null
+  const payload = parseJwt<Record<string, unknown>>(token)
+  if (!payload) return null
+  const name = payload['user_name']
+  return typeof name === 'string' ? name : null
 }

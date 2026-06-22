@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { renderMarkdown } from '../utils/markdown'
 import {
   highlightInput,
@@ -13,19 +13,63 @@ import type { ComponentMessage, ComponentAttachment } from '../types/chat'
 import type { AttachedFileVO } from '../api/types'
 import FilePreviewModal from './FilePreviewModal.vue'
 
-defineProps<{
+const props = defineProps<{
   msg: ComponentMessage
   selectedModelName: string
   isAiResponding: boolean
+  isMainThinking: boolean
   isLastMessage: boolean
-  expandedThinking: Set<string>
   showAllAttachments: Set<string>
   toolChainState: 0 | 1 | 2
   expandedSteps: Set<string>
 }>()
 
+// ── Local thinking expanded state ──────────────────────────────────
+// Each MessageBubble controls its own thinking-area fold independently,
+// avoiding the cross-component state pollution of a shared Set.
+const isThinkingExpanded = ref(false)
+
+// ── Dual immediate watcher ─────────────────────────────────────────
+// Listens to BOTH msg.id (session switch → component reuse) and
+// toolChainState (mode toggle).  immediate: true ensures the state is
+// always initialised on first mount or when Vue reuses the component
+// for a different message after a session switch.
+watch(
+  [() => props.msg.id, () => props.toolChainState],
+  ([, newToolState]) => {
+    isThinkingExpanded.value = newToolState === 2
+  },
+  { immediate: true },
+)
+
+// ═══════════════════════════════════════════════════════════════════
+//  Unified thinking visibility
+//
+//  Separates the "global mode override" (All = toolChainState 2
+//  forces the area expanded) from the "local user toggle" (click
+//  to expand/collapse in Summary / Hidden mode).
+//
+//  This prevents thinking from collapsing in All mode when the
+//  user clicks the header, and ensures the grid-template-rows
+//  collapse animation fires smoothly when switching back to
+//  Summary / Hidden (the watch above resets isThinkingExpanded
+//  → the computed flips → the expanded class is toggled).
+// ═══════════════════════════════════════════════════════════════════
+
+const isThinkingVisible = computed(() => {
+  // 1) All mode → thinking is forced expanded, ignore local state
+  if (props.toolChainState === 2) return true
+  // 2) Summary / Hidden → follow local toggle
+  return isThinkingExpanded.value
+})
+
+function toggleThinking() {
+  // In All mode, clicking does nothing — the mode itself governs visibility.
+  if (props.toolChainState === 2) return
+  isThinkingExpanded.value = !isThinkingExpanded.value
+}
+
 const emit = defineEmits<{
-  toggleThinking: [id: string]
   toggleAttachments: [id: string]
   toggleToolStep: [id: string]
 }>()
@@ -148,7 +192,7 @@ async function copyMessage(id: string, content: string) {
       <div v-if="lightboxUrl" @click="lightboxUrl = ''" class="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 cursor-pointer">
         <img :src="lightboxUrl" class="max-w-full max-h-full rounded-xl shadow-2xl" @click.stop />
       </div>
-      <div class="bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3 text-sm text-stone-800 leading-relaxed whitespace-pre-wrap shadow-sm">{{ msg.content }}</div>
+      <div class="bg-violet-50 border border-violet-100 rounded-2xl px-4 py-3 text-sm text-stone-800 leading-relaxed shadow-sm message-content-text">{{ msg.content }}</div>
       <div class="text-xs text-stone-400 flex items-center justify-end gap-3">
         <button @click.stop="copyMessage(msg.id, msg.content)"
           :class="[
@@ -173,23 +217,31 @@ async function copyMessage(id: string, content: string) {
     <!-- Assistant Message -->
     <div v-else class="flex gap-3 max-w-[85%]">
       <div class="space-y-3 min-w-0">
-        <!-- Thinking Block — collapsible with max-height + left accent border -->
-        <div v-if="msg.thinking" class="mb-1 w-full overflow-hidden">
-          <button @click="emit('toggleThinking', msg.id)" class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition-colors w-full text-left">
+        <!-- Thinking Block — grid-template-rows transition with card style -->
+        <div v-if="msg.thinking" class="mb-1">
+          <button @click="toggleThinking" class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition-colors w-full text-left">
             <svg v-if="msg.thinking.completed" class="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
             <svg v-else class="w-3.5 h-3.5 text-violet-500 shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             <span>{{ msg.thinking.completed ? '已深度思考' : '深度思考中...' }}</span>
             <span v-if="msg.thinking.durationMs" class="text-stone-300 mx-0.5">·</span>
             <span v-if="msg.thinking.durationMs" class="text-stone-500">{{ formatDuration(msg.thinking.durationMs) }}</span>
-            <svg class="w-3 h-3 text-stone-300 ml-auto shrink-0 transition-transform duration-200" :class="expandedThinking.has(msg.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <svg class="w-3 h-3 text-stone-300 ml-auto shrink-0 transition-transform duration-200" :class="isThinkingVisible ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <Transition name="thinking">
-            <div v-if="expandedThinking.has(msg.id)" class="mt-2 w-full overflow-hidden">
-              <div class="thinking-content text-xs text-stone-500 italic leading-relaxed whitespace-pre-wrap break-words">{{ msg.thinking.content }}</div>
+          <!-- Grid-template-rows transition: GPU-accelerated height animation -->
+          <div
+            class="thinking-grid-wrapper mt-2"
+            :class="{ expanded: isThinkingVisible }"
+          >
+            <div class="thinking-grid-inner">
+              <div class="thinking-card whitespace-pre-wrap break-words">{{ msg.thinking.content }}</div>
             </div>
-          </Transition>
+          </div>
         </div>
-        <div v-else-if="isAiResponding && isLastMessage" class="flex items-center gap-2 text-xs text-stone-400">
+        <!-- "正在思考..." spinner — only during the initial main-thinking
+             phase, BEFORE any thinking content has streamed in.  Once
+             msg.thinking is populated (or text/tool calls arrive) the
+             spinner is replaced by the thinking card or content. -->
+        <div v-else-if="isAiResponding && isMainThinking && isLastMessage && !msg.thinking" class="flex items-center gap-2 text-xs text-stone-400">
           <div class="w-3 h-3 rounded-full border-2 border-violet-200 border-t-violet-500 animate-spin"></div><span>正在思考...</span>
         </div>
 
@@ -222,6 +274,28 @@ async function copyMessage(id: string, content: string) {
                       <div>
                         <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
                         <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
+                      </div>
+                      <!-- Tool running loading indicator (radar-pulse animation) -->
+                      <div v-if="tc.status === 'running' && !tc.output"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg bg-[#F3F1FC]/60 border border-[#D0D0E8]"
+                      >
+                        <!-- Rotating ring with center dot -->
+                        <span class="relative flex items-center justify-center w-5 h-5 shrink-0">
+                          <span class="absolute inset-0 rounded-full border-2 border-[#606CF3]/20"></span>
+                          <span class="absolute inset-0 rounded-full border-2 border-transparent border-t-[#606CF3] animate-spin-slow"></span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-[#606CF3] tool-pulse-dot"></span>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[12px] font-mono font-semibold text-[#606CF3] tool-text-breathing">{{ tc.name }}</span>
+                            <span class="text-[11px] text-stone-400">执行中...</span>
+                          </div>
+                          <div class="flex items-center gap-1 mt-1">
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:0ms"></span>
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:200ms"></span>
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:400ms"></span>
+                          </div>
+                        </div>
                       </div>
                       <Transition name="tool-output">
                         <div v-if="tc.output" :key="'out-' + tc.id">
@@ -265,6 +339,28 @@ async function copyMessage(id: string, content: string) {
                       <div>
                         <div class="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">输入</div>
                         <div class="mt-0.5 bg-stone-50 border border-stone-100 rounded-lg p-2 font-mono text-[11px] text-stone-600 leading-relaxed overflow-x-auto" v-html="highlightInput(tc.input)"></div>
+                      </div>
+                      <!-- Tool running loading indicator (radar-pulse animation) -->
+                      <div v-if="tc.status === 'running' && !tc.output"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg bg-[#F3F1FC]/60 border border-[#D0D0E8]"
+                      >
+                        <!-- Rotating ring with center dot -->
+                        <span class="relative flex items-center justify-center w-5 h-5 shrink-0">
+                          <span class="absolute inset-0 rounded-full border-2 border-[#606CF3]/20"></span>
+                          <span class="absolute inset-0 rounded-full border-2 border-transparent border-t-[#606CF3] animate-spin-slow"></span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-[#606CF3] tool-pulse-dot"></span>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-1.5">
+                            <span class="text-[12px] font-mono font-semibold text-[#606CF3] tool-text-breathing">{{ tc.name }}</span>
+                            <span class="text-[11px] text-stone-400">执行中...</span>
+                          </div>
+                          <div class="flex items-center gap-1 mt-1">
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:0ms"></span>
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:200ms"></span>
+                            <span class="w-1 h-1 rounded-full bg-[#606CF3] dot-pulse" style="animation-delay:400ms"></span>
+                          </div>
+                        </div>
                       </div>
                       <Transition name="tool-output">
                         <div v-if="tc.output" :key="'out-' + tc.id">
@@ -324,38 +420,32 @@ async function copyMessage(id: string, content: string) {
 </template>
 
 <style scoped>
-/* ── Thinking block: expand/collapse with max-height transition ── */
-.thinking-enter-active {
-  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.2s ease;
-  overflow: hidden;
-}
-.thinking-leave-active {
-  transition: max-height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.15s ease;
-  overflow: hidden;
-}
-.thinking-enter-from,
-.thinking-leave-to {
-  max-height: 0;
+/* ── Thinking block: grid-template-rows GPU-accelerated transition ── */
+.thinking-grid-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 350ms cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 350ms ease;
   opacity: 0;
+  overflow: hidden;
 }
-.thinking-enter-to,
-.thinking-leave-from {
-  max-height: 5000px;
+.thinking-grid-wrapper.expanded {
+  grid-template-rows: 1fr;
   opacity: 1;
 }
+.thinking-grid-inner {
+  min-height: 0;
+}
 
-/* Thinking content container — limited height, scrollable, left accent */
-.thinking-content {
-  max-height: 200px;
-  overflow-y: auto;
-  background: #FAFAFE;
-  border: 1px solid #E6E5F5;
-  border-left: 3px solid #C7C7D1;
-  border-radius: 0 8px 8px 0;
-  padding: 10px 12px;
-  color: #7E84A3;
+/* Thinking card — ultra-minimal: transparent, subtle gray line, muted text */
+.thinking-card {
+  background: transparent;
+  border-left: 1.5px solid #E6E5F5;
+  padding: 10px 14px;
+  color: #9CA3AF;
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.75;
 }
 
 /* ── Tool output: graceful slide-in for result content ── */
@@ -393,5 +483,48 @@ async function copyMessage(id: string, content: string) {
 .tool-expand-leave-from {
   max-height: 5000px;
   opacity: 1;
+}
+
+/* ── Message text: prevent long unbroken strings (Java stack traces,
+     URLs, code tokens) from overflowing the bubble card. ── */
+.message-content-text {
+  word-break: break-all;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* ── Tool loading dots pulse animation ── */
+.dot-pulse {
+  animation: dotPulse 1.4s ease-in-out infinite both;
+}
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* ── Tool running: slow rotating ring ── */
+.animate-spin-slow {
+  animation: spinSlow 1.5s linear infinite;
+}
+@keyframes spinSlow {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Tool running: center dot pulse ── */
+.tool-pulse-dot {
+  animation: toolPulseDot 1.5s ease-in-out infinite;
+}
+@keyframes toolPulseDot {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ── Tool running: tool name breathing ── */
+.tool-text-breathing {
+  animation: toolBreathing 2s ease-in-out infinite;
+}
+@keyframes toolBreathing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
 }
 </style>

@@ -16,7 +16,7 @@ import type {
   UserMemoryVO,
 } from './types'
 
-const BASE_URL = ''
+const BASE_URL = '/api'
 
 function getToken(): string | null {
   return localStorage.getItem('token')

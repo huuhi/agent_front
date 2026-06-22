@@ -28,19 +28,6 @@ export function renderMarkdown(content: string): string {
   return marked.parse(content, { async: false }) as string
 }
 
-export function setupCodeCopy() {
-  document.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.code-copy-btn')
-    if (!btn) return
-    const wrapper = btn.closest('.code-block-wrapper')
-    const code = wrapper?.querySelector('code')?.textContent || ''
-    navigator.clipboard.writeText(code).then(() => {
-      btn.classList.add('copied')
-      setTimeout(() => btn.classList.remove('copied'), 1500)
-    })
-  })
-}
-
 // ========== Message grouping ==========
 export function groupMessages(raw: MessageVO[]): ComponentMessage[] {
   const result: ComponentMessage[] = []
